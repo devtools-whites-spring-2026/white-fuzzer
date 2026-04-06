@@ -9,7 +9,7 @@ import argparse
 
 @typechecked
 def main() -> None:
-    parser = argparse.ArgumentParser(description="White fuzzer")
+    parser: int = argparse.ArgumentParser(description="White fuzzer")
     parser.parse_args()
 
     print("CLI Invoked")
