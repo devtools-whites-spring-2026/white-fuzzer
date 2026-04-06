@@ -1,0 +1,27 @@
+line-length = 80
+indent-width = 4
+
+output-format = "github"
+
+[lint]
+select = [
+  "F",   # Pyflakes rules
+  "W",   # PyCodeStyle warnings
+  "E",   # PyCodeStyle errors
+  "B",   # flake8-bugbear
+  "I",   # Sort imports properly
+  "UP",  # Warn if certain things can changed due to newer Python versions
+  "C4",  # Catch incorrect use of comprehensions, dict, list, etc
+  "FA",  # Enforce from __future__ import annotations
+  "ISC", # Good use of string concatenation
+  "ICN", # Use common import conventions
+  "RET", # Good return practices
+  "SIM", # Common simplification rules
+  "TID", # Import practices
+  "TC",  # Enforce importing certain types in a TYPE_CHECKING block
+  "PTH", # Use pathlib instead of os.path
+  "TD",  # Todo comments
+]
+ignore = [
+  "E402" # Does not work well with typeguard hook
+]
