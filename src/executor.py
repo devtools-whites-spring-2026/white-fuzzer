@@ -1,5 +1,6 @@
 from collections.abc import Callable
 from dataclasses import dataclass
+
 from coverage import Coverage
 
 
@@ -9,16 +10,21 @@ class ExecutionResult:
 
 
 def run_target(target: Callable[[str], None], argument: str) -> ExecutionResult:
-    try:
-        coverage_collector = Coverage()
-        coverage_collector.reset()
-        coverage_collector.start()
+    coverage_collector: Coverage = Coverage()
+    coverage_collector.reset()
+    coverage_collector.start()
 
+    try:
         target(argument)
 
         coverage_collector.stop()
         coverage_report = coverage_collector.get_stats()
-        print(f"Coverage report: {coverage_report.get("covered")}/{coverage_report.get("total")} lines ({coverage_report.get("percent")}%)")
+
+        print(
+            f"Coverage report: {coverage_report['covered']}"
+            f"/{coverage_report['total']} lines "
+            f"({coverage_report['percent']}%)"
+        )
 
         return ExecutionResult(None)
     except Exception as ex:
