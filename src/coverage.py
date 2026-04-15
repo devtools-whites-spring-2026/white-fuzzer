@@ -47,7 +47,9 @@ class Coverage:
             return
 
         sys.monitoring.set_events(self.tool_id, 0)
-        sys.monitoring.register_callback(self.tool_id, sys.monitoring.events.LINE, None)
+        sys.monitoring.register_callback(
+            self.tool_id, sys.monitoring.events.LINE, None
+        )
         sys.monitoring.free_tool_id(self.tool_id)
         self._started = False
 
@@ -96,7 +98,7 @@ class Coverage:
 
         for filename, all_lines in self._total_lines_map.items():
             covered: set[int] = {
-                l for (f, l) in self.covered_lines if f == filename
+                line for (f, line) in self.covered_lines if f == filename
             }
 
             covered_count: int = len(covered & all_lines)

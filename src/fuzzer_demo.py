@@ -8,7 +8,10 @@ from src.throw_on_digit import throw_if_1st_is_digit
 
 def main() -> None:
     result = orchestrate_fuzzing(
-        throw_if_1st_is_digit, ["hello"], RandomCharMutator()
+        throw_if_1st_is_digit,
+        ["hello"],
+        RandomCharMutator(),
+        print_target_function_coverage=True,
     )
     print(result)
 
