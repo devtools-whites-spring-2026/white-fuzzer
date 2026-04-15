@@ -29,6 +29,15 @@ class InsertCharMutator(Mutator):
         return arg[:n] + chr(c) + arg[n:]
 
 
+class SelectionMutator(Mutator):
+    def __init__(self, mutators: list[Mutator]):
+        self.mutators = mutators
+
+    def mutate(self: Self, arg: str) -> str:
+        random_mutator = random.choice(self.mutators)
+        return random_mutator.mutate(arg)
+
+
 class RepeatMutator(Mutator):
     def __init__(self: Self, inner: Mutator, max_times: int = 10) -> None:
         self.inner = inner

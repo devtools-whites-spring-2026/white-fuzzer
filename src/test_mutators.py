@@ -1,6 +1,6 @@
-from typeguard import install_import_hook
+# from typeguard import install_import_hook
 
-install_import_hook()
+# install_import_hook()
 
 from src.fuzzer_coordinator import orchestrate_fuzzing
 from src.mutator import DeleteCharMutator, InsertCharMutator, RepeatMutator
@@ -20,13 +20,17 @@ TARGET = make_throw_if_wrong_length(len(CORPUS[0]))
 
 
 def test_delete_finds_shorter_string() -> None:
-    result = orchestrate_fuzzing(TARGET, CORPUS.copy(), DeleteCharMutator())
+    result = orchestrate_fuzzing(
+        TARGET, CORPUS.copy(), DeleteCharMutator()
+    ).tests_to_report
     assert len(result) > 0
     assert any(len(s) < len(CORPUS[0]) for s in result)
 
 
 def test_insert_finds_longer_string() -> None:
-    result = orchestrate_fuzzing(TARGET, CORPUS.copy(), InsertCharMutator())
+    result = orchestrate_fuzzing(
+        TARGET, CORPUS.copy(), InsertCharMutator()
+    ).tests_to_report
     assert len(result) > 0
     assert any(len(s) > len(CORPUS[0]) for s in result)
 
@@ -34,6 +38,6 @@ def test_insert_finds_longer_string() -> None:
 def test_repeat_finds_different_length_string() -> None:
     result = orchestrate_fuzzing(
         TARGET, CORPUS.copy(), RepeatMutator(InsertCharMutator(), max_times=5)
-    )
+    ).tests_to_report
     assert len(result) > 0
     assert any(len(s) != len(CORPUS[0]) for s in result)
