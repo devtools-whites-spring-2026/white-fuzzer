@@ -22,7 +22,7 @@ def orchestrate_fuzzing(
         random.seed(seed)
         test = random.choice(corpus)
         mutated_test = mutator.mutate(test)
-        exec_result = run_target(target, mutated_test)
+        exec_result = run_target(target, mutated_test, coverage_collector)
         if exec_result.thrown_exception is not None:
             tests_to_report[mutated_test] = exec_result
             corpus.append(mutated_test)

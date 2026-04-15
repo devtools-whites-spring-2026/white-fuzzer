@@ -15,7 +15,7 @@ class Coverage:
         self.tool_id: int = 5
         self._started: bool = False
 
-        self._project_root: str = project_root or Path.cwd()
+        self._project_root: str = project_root or str(Path.cwd())
         self._include_paths: list[str] = include_paths or [self._project_root]
 
         self._total_lines_map: dict[str, set[int]] = self._collect_total_lines()
@@ -47,6 +47,8 @@ class Coverage:
             return
 
         sys.monitoring.set_events(self.tool_id, 0)
+        sys.monitoring.register_callback(self.tool_id, sys.monitoring.events.LINE, None)
+        sys.monitoring.free_tool_id(self.tool_id)
         self._started = False
 
     def reset(self) -> None:
@@ -59,7 +61,7 @@ class Coverage:
         lines: set[int] = set()
 
         try:
-            with Path.open(filename) as f:
+            with Path(filename).open() as f:
                 for i, line in enumerate(f, start=1):
                     stripped_line: str = line.strip()
 
@@ -74,14 +76,16 @@ class Coverage:
         result: dict[str, set[int]] = {}
 
         for path in self._include_paths:
-            if Path.isfile(path):
+            path_obj = Path(path)
+
+            if path_obj.is_file():
                 result[path] = self._get_file_lines(path)
 
-            elif Path.isdir(path):
+            elif path_obj.is_dir():
                 for root, _, files in os.walk(path):
                     for file in files:
                         if file.endswith(".py"):
-                            full_path: str = Path(root / file)
+                            full_path = str(Path(root) / file)
                             result[full_path] = self._get_file_lines(full_path)
 
         return result

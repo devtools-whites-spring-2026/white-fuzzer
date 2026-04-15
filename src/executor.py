@@ -10,10 +10,8 @@ class ExecutionResult:
 
 
 def run_target(
-        target: Callable[[str], None],
-        argument: str,
-        coverage_collector: Coverage
-    ) -> ExecutionResult:
+    target: Callable[[str], None], argument: str, coverage_collector: Coverage
+) -> ExecutionResult:
     coverage_collector.start()
 
     try:
