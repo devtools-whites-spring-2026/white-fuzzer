@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from src.coverage import Coverage
+from src.coverage import BaseCoverage, Coverage
 from src.executor import ExecutionResult, run_target
 from src.mutator import Mutator
 
@@ -18,7 +18,7 @@ class FuzzingResult:
 
 
 def _get_target_function_coverage(
-    target: Callable[[str], Any], coverage_collector: Coverage
+    target: Callable[[str], Any], coverage_collector: BaseCoverage
 ) -> tuple[int, int, float]:
     target_file = inspect.getsourcefile(target)
     source_lines, start_line = inspect.getsourcelines(target)
@@ -53,8 +53,9 @@ def orchestrate_fuzzing(
     initial_corpus: list[str],
     mutator: Mutator,
     iterations: int = 1000,
+    coverage_collector: BaseCoverage | None = None,
 ) -> FuzzingResult:
-    coverage_collector = Coverage()
+    coverage_collector = coverage_collector or Coverage()
     coverage_collector.reset()
 
     seeds = range(iterations)

@@ -1,63 +1,43 @@
 import os
 import sys
+from abc import ABC, abstractmethod
 from pathlib import Path
 from types import CodeType
 from typing import Any
 
 
-class Coverage:
+class BaseCoverage(ABC):
     def __init__(
         self,
         project_root: str | None = None,
         include_paths: list[str] | None = None,
     ) -> None:
         self.covered_lines: set[tuple[str, int]] = set()
-        self.tool_id: int = 5
         self._started: bool = False
 
         self._project_root: str = project_root or str(Path.cwd())
         self._include_paths: list[str] = include_paths or [self._project_root]
-
         self._total_lines_map: dict[str, set[int]] = self._collect_total_lines()
 
-    def _line_callback(self, code: CodeType, line_number: int) -> None:
-        filename: str = code.co_filename
-
-        if not filename.startswith(self._project_root):
-            return
-
-        self.covered_lines.add((filename, line_number))
-
+    @abstractmethod
     def start(self) -> None:
-        if self._started:
-            return
+        raise NotImplementedError()
 
-        sys.monitoring.use_tool_id(self.tool_id, "coverage")
-
-        sys.monitoring.register_callback(
-            self.tool_id, sys.monitoring.events.LINE, self._line_callback
-        )
-
-        sys.monitoring.set_events(self.tool_id, sys.monitoring.events.LINE)
-
-        self._started = True
-
+    @abstractmethod
     def stop(self) -> None:
-        if not self._started:
-            return
-
-        sys.monitoring.set_events(self.tool_id, 0)
-        sys.monitoring.register_callback(
-            self.tool_id, sys.monitoring.events.LINE, None
-        )
-        sys.monitoring.free_tool_id(self.tool_id)
-        self._started = False
+        raise NotImplementedError()
 
     def reset(self) -> None:
         self.covered_lines.clear()
 
     def get_coverage(self) -> set[tuple[str, int]]:
         return self.covered_lines
+
+    def _line_callback(self, code: CodeType, line_number: int) -> None:
+        filename: str = code.co_filename
+        if not filename.startswith(self._project_root):
+            return
+        self.covered_lines.add((filename, line_number))
 
     def _get_file_lines(self, filename: str) -> set[int]:
         lines: set[int] = set()
@@ -116,3 +96,73 @@ class Coverage:
             "total": total_lines,
             "percent": round(percent, 2),
         }
+
+
+class MonitoringCoverage(BaseCoverage):
+    def __init__(
+        self,
+        project_root: str | None = None,
+        include_paths: list[str] | None = None,
+    ) -> None:
+        super().__init__(project_root=project_root, include_paths=include_paths)
+        self.tool_id: int = 5
+
+    def start(self) -> None:
+        if self._started:
+            return
+
+        sys.monitoring.use_tool_id(self.tool_id, "coverage")
+
+        sys.monitoring.register_callback(
+            self.tool_id, sys.monitoring.events.LINE, self._line_callback
+        )
+
+        sys.monitoring.set_events(self.tool_id, sys.monitoring.events.LINE)
+
+        self._started = True
+
+    def stop(self) -> None:
+        if not self._started:
+            return
+
+        sys.monitoring.set_events(self.tool_id, 0)
+        sys.monitoring.register_callback(
+            self.tool_id, sys.monitoring.events.LINE, None
+        )
+        sys.monitoring.free_tool_id(self.tool_id)
+        self._started = False
+
+
+class SetTraceCoverage(BaseCoverage):
+    def __init__(
+        self,
+        project_root: str | None = None,
+        include_paths: list[str] | None = None,
+    ) -> None:
+        super().__init__(project_root=project_root, include_paths=include_paths)
+        self._previous_trace = None
+
+    def _trace(self, frame, event: str, arg):
+        if event == "line":
+            self._line_callback(frame.f_code, frame.f_lineno)
+        return self._trace
+
+    def start(self) -> None:
+        if self._started:
+            return
+
+        self._previous_trace = sys.gettrace()
+        sys.settrace(self._trace)
+        self._started = True
+
+    def stop(self) -> None:
+        if not self._started:
+            return
+
+        sys.settrace(self._previous_trace)
+        self._previous_trace = None
+        self._started = False
+
+
+# Keep backward-compatible name for existing code.
+Coverage = MonitoringCoverage
