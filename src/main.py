@@ -5,6 +5,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from src.coverage_benchmark import run_coverage_benchmark
 from src.fuzzer_coordinator import orchestrate_fuzzing
 from src.mutator import RandomCharMutator
 
@@ -53,6 +54,23 @@ def parse_args():
     )
 
     parser.add_argument(
+        "--benchmark-coverage",
+        action="store_true",
+        help=(
+            "Benchmark coverage collectors "
+            "(sys.monitoring vs sys.settrace)"
+        ),
+    )
+
+    parser.add_argument(
+        "--benchmark-iterations",
+        nargs="+",
+        type=int,
+        default=[100, 1000, 10000, 100000, 1000000],
+        help="Iteration counts to use for coverage benchmark",
+    )
+
+    parser.add_argument(
         "--seed",
         type=int,
         default=None,
@@ -61,7 +79,7 @@ def parse_args():
     parser.add_argument(
         "--input",
         nargs="+",
-        default=["hello"],
+        default=["Content-Type: text/html"],
     )
 
     parser.add_argument(
@@ -101,6 +119,23 @@ def main():
         print("No crashes found")
     else:
         print(results)
+
+    if args.benchmark_coverage:
+        benchmark_samples = run_coverage_benchmark(
+            target=target_func,
+            initial_corpus=list(args.input),
+            mutator=mutator,
+            iteration_counts=args.benchmark_iterations,
+        )
+        print("\nCoverage benchmark:")
+        print("iterations | monitoring    | settrace    | settrace/monitoring")
+        for sample in benchmark_samples:
+            print(
+                f"{sample.iterations:10d} | "
+                f"{sample.monitoring_seconds:13.6f} | "
+                f"{sample.settrace_seconds:11.6f} | "
+                f"{sample.slowdown_ratio:20.2f}x"
+            )
 
 
 if __name__ == "__main__":

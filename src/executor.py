@@ -1,7 +1,7 @@
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from coverage import Coverage
+from src.coverage import BaseCoverage
 
 
 @dataclass
@@ -10,7 +10,9 @@ class ExecutionResult:
 
 
 def run_target(
-    target: Callable[[str], None], argument: str, coverage_collector: Coverage
+    target: Callable[[str], None],
+    argument: str,
+    coverage_collector: BaseCoverage,
 ) -> ExecutionResult:
     coverage_collector.start()
 
