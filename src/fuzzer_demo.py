@@ -1,7 +1,9 @@
-# from typeguard import install_import_hook
-
-# install_import_hook()
-from src.fuzzer_coordinator import FuzzingResult, orchestrate_fuzzing
+from src.complex_protocol import analyze_protocol_message
+from src.fuzzer_coordinator import (
+    FuzzingResult,
+    orchestrate_fuzzing,
+    orchestrate_greybox_fuzzing,
+)
 from src.mutator import (
     DeleteCharMutator,
     InsertCharMutator,
@@ -33,8 +35,11 @@ def print_fuzzing_result(result: FuzzingResult) -> None:
     print(f"Findings: {len(findings)}")
     for i, (input_str, exec_result) in enumerate(findings.items(), start=1):
         print(f"  [{i}] Input:     {input_str!r}")
-        name = type(exec_result.thrown_exception).__name__
-        print(f"      Exception: {name}: {exec_result.thrown_exception}")
+        if exec_result.thrown_exception is None:
+            print(f"      New coverage: +{exec_result.new_coverage} lines")
+        else:
+            name = type(exec_result.thrown_exception).__name__
+            print(f"      Exception: {name}: {exec_result.thrown_exception}")
     print()
     print("=====================")
 
@@ -58,6 +63,16 @@ def main() -> None:
         iterations=500000,
     )
     print_fuzzing_result(result)
+
+    greybox_result = orchestrate_greybox_fuzzing(
+        analyze_protocol_message,
+        [
+            "WFZ/1 token=greybox; mode=deep; stage=7; checksum=11; action=ping",
+        ],
+        repeat_mutator,
+        iterations=1000,
+    )
+    print_fuzzing_result(greybox_result)
 
 
 if __name__ == "__main__":

@@ -5,7 +5,10 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from src.fuzzer_coordinator import orchestrate_fuzzing
+from src.fuzzer_coordinator import (
+    orchestrate_fuzzing,
+    orchestrate_greybox_fuzzing,
+)
 from src.mutator import RandomCharMutator
 
 
@@ -69,6 +72,11 @@ def parse_args():
         action="store_true",
     )
 
+    parser.add_argument(
+        "--greybox",
+        action="store_true",
+    )
+
     return parser.parse_args()
 
 
@@ -86,15 +94,15 @@ def main():
     # We can extend this with multiple mutators in the future
     mutator = RandomCharMutator()
 
-    if args.seed is not None:
-        import random
-
-        random.seed(args.seed)
-
-    results = orchestrate_fuzzing(
+    orchestrator = (
+        orchestrate_greybox_fuzzing if args.greybox else orchestrate_fuzzing
+    )
+    results = orchestrator(
         target=target_func,
         initial_corpus=list(args.input),
         mutator=mutator,
+        iterations=args.iterations,
+        seed=args.seed,
     )
 
     if not results:

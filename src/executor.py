@@ -1,12 +1,18 @@
-from collections.abc import Callable
-from dataclasses import dataclass
+from __future__ import annotations
 
-from coverage import Coverage
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from src.coverage import Coverage
 
 
 @dataclass
 class ExecutionResult:
     thrown_exception: Exception | None
+    new_coverage: int = 0
 
 
 def run_target(
