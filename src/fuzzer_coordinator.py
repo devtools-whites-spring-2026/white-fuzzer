@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, NamedTuple
 
 from src.coverage import Coverage
-from src.executor import ExecutionResult, run_target
+from src.executor import ExecutionResult, Executor, FunctionExecutor
 from src.mutator import Mutator
 
 
@@ -108,23 +108,32 @@ def orchestrate_fuzzing(
     mutator: Mutator,
     iterations: int = 1000,
     seed: int | None = None,
+    executor: Executor | None = None,
+    coverage_include_paths: list[str] | None = None,
 ) -> FuzzingResult:
     coverage_collector = _make_coverage_collector(target)
     coverage_collector.reset()
+    active_executor = executor or FunctionExecutor(target)
 
     if seed is not None:
         random.seed(seed)
 
+
     corpus = initial_corpus
     tests_to_report: dict[str, ExecutionResult] = {}
-    for _ in range(iterations):
+    for i in range(iterations):
+        print(f"\rFuzzing progress: {i + 1}/{iterations}", end="")
+
         test = random.choice(corpus)
         mutated_test = mutator.mutate(test)
-        exec_result = run_target(target, mutated_test, coverage_collector)
+        exec_result = active_executor.execute(mutated_test, coverage_collector)
+
         if exec_result.thrown_exception is not None:
             tests_to_report[mutated_test] = exec_result
             if random.randint(0, 1000):
                 corpus.append(mutated_test)
+
+    print(f"\rFuzzing progress: {iterations}/{iterations}")
 
     coverage_report = coverage_collector.get_stats()
     function_coverage = _get_target_function_coverage(

@@ -35,6 +35,10 @@ def print_fuzzing_result(result: FuzzingResult) -> None:
         else:
             name = type(exec_result.thrown_exception).__name__
             print(f"      Exception: {name}: {exec_result.thrown_exception}")
+        if exec_result.traceback_text:
+            print("      Traceback:")
+            for line in exec_result.traceback_text.rstrip().splitlines():
+                print(f"        {line}")
     print()
     print("=====================")
 

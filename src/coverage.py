@@ -16,17 +16,30 @@ class Coverage:
         self._started: bool = False
 
         self._project_root: str = project_root or str(Path.cwd())
-        self._include_paths: list[str] = include_paths or [self._project_root]
+        include_roots = include_paths or [self._project_root]
+        self._include_paths: list[str] = [
+            str(Path(path).resolve()) for path in include_roots
+        ]
 
         self._total_lines_map: dict[str, set[int]] = self._collect_total_lines()
 
     def _line_callback(self, code: CodeType, line_number: int) -> None:
-        filename: str = code.co_filename
-
-        if not filename.startswith(self._project_root):
+        filename: str = str(Path(code.co_filename).resolve())
+        if not self._is_in_scope(filename):
             return
 
         self.covered_lines.add((filename, line_number))
+
+    def _is_in_scope(self, filename: str) -> bool:
+        for path in self._include_paths:
+            path_obj = Path(path)
+            if path_obj.is_file():
+                if filename == path:
+                    return True
+                continue
+            if filename == path or filename.startswith(f"{path}{os.sep}"):
+                return True
+        return False
 
     def start(self) -> None:
         if self._started:
@@ -81,13 +94,14 @@ class Coverage:
             path_obj = Path(path)
 
             if path_obj.is_file():
-                result[path] = self._get_file_lines(path)
+                full_path = str(path_obj.resolve())
+                result[full_path] = self._get_file_lines(full_path)
 
             elif path_obj.is_dir():
                 for root, _, files in os.walk(path):
                     for file in files:
                         if file.endswith(".py"):
-                            full_path = str(Path(root) / file)
+                            full_path = str((Path(root) / file).resolve())
                             result[full_path] = self._get_file_lines(full_path)
 
         return result
