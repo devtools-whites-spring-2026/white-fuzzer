@@ -49,3 +49,13 @@ class RepeatMutator(Mutator):
         for _ in range(times):
             result = self.inner.mutate(result)
         return result
+
+
+def create_generic_mutator() -> Mutator:
+    mutators: list[Mutator] = [
+        RandomCharMutator(),
+        DeleteCharMutator(),
+        InsertCharMutator(),
+    ]
+    selection_mutator = SelectionMutator(mutators)
+    return RepeatMutator(selection_mutator)

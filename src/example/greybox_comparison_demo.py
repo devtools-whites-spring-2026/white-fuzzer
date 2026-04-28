@@ -1,18 +1,13 @@
-from src.complex_protocol import analyze_protocol_message
+from src.example.complex_protocol import analyze_protocol_message
+from src.example.parse_http_header import parse_http_header
 from src.fuzzer_coordinator import (
     FuzzingResult,
     orchestrate_fuzzing,
     orchestrate_greybox_fuzzing,
 )
 from src.mutator import (
-    DeleteCharMutator,
-    InsertCharMutator,
-    Mutator,
-    RandomCharMutator,
-    RepeatMutator,
-    SelectionMutator,
+    create_generic_mutator,
 )
-from src.parse_http_header import parse_http_header
 
 
 def print_fuzzing_result(result: FuzzingResult) -> None:
@@ -45,13 +40,7 @@ def print_fuzzing_result(result: FuzzingResult) -> None:
 
 
 def main() -> None:
-    mutators: list[Mutator] = [
-        RandomCharMutator(),
-        DeleteCharMutator(),
-        InsertCharMutator(),
-    ]
-    selection_mutator = SelectionMutator(mutators)
-    repeat_mutator = RepeatMutator(selection_mutator)
+    mutator = create_generic_mutator()
     result = orchestrate_fuzzing(
         parse_http_header,
         [
@@ -59,7 +48,7 @@ def main() -> None:
             "Authorization: Bearer token123",
             "X-Request-Id: abc",
         ],
-        repeat_mutator,
+        mutator,
         iterations=500000,
     )
     print_fuzzing_result(result)
@@ -69,7 +58,7 @@ def main() -> None:
         [
             "WFZ/1 token=greybox; mode=deep; stage=7; checksum=11; action=ping",
         ],
-        repeat_mutator,
+        mutator,
         iterations=1000,
     )
     print_fuzzing_result(greybox_result)

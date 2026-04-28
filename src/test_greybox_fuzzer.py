@@ -55,4 +55,4 @@ def test_greybox_promotes_new_coverage_and_reaches_deep_branch() -> None:
     assert any(
         item.new_coverage > 0 for item in result.tests_to_report.values()
     )
-    assert result.corpus_size > 1
+    assert len(result.corpus) > 1
