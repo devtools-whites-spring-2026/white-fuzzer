@@ -1,16 +1,13 @@
-# from typeguard import install_import_hook
-
-# install_import_hook()
-from src.fuzzer_coordinator import FuzzingResult, orchestrate_fuzzing
-from src.mutator import (
-    DeleteCharMutator,
-    InsertCharMutator,
-    Mutator,
-    RandomCharMutator,
-    RepeatMutator,
-    SelectionMutator,
+from src.example.complex_protocol import analyze_protocol_message
+from src.example.parse_http_header import parse_http_header
+from src.fuzzer_coordinator import (
+    FuzzingResult,
+    orchestrate_fuzzing,
+    orchestrate_greybox_fuzzing,
 )
-from src.parse_http_header import parse_http_header
+from src.mutator import (
+    create_generic_mutator,
+)
 
 
 def print_fuzzing_result(result: FuzzingResult) -> None:
@@ -33,20 +30,17 @@ def print_fuzzing_result(result: FuzzingResult) -> None:
     print(f"Findings: {len(findings)}")
     for i, (input_str, exec_result) in enumerate(findings.items(), start=1):
         print(f"  [{i}] Input:     {input_str!r}")
-        name = type(exec_result.thrown_exception).__name__
-        print(f"      Exception: {name}: {exec_result.thrown_exception}")
+        if exec_result.thrown_exception is None:
+            print(f"      New coverage: +{exec_result.new_coverage} lines")
+        else:
+            name = type(exec_result.thrown_exception).__name__
+            print(f"      Exception: {name}: {exec_result.thrown_exception}")
     print()
     print("=====================")
 
 
 def main() -> None:
-    mutators: list[Mutator] = [
-        RandomCharMutator(),
-        DeleteCharMutator(),
-        InsertCharMutator(),
-    ]
-    selection_mutator = SelectionMutator(mutators)
-    repeat_mutator = RepeatMutator(selection_mutator)
+    mutator = create_generic_mutator()
     result = orchestrate_fuzzing(
         parse_http_header,
         [
@@ -54,10 +48,20 @@ def main() -> None:
             "Authorization: Bearer token123",
             "X-Request-Id: abc",
         ],
-        repeat_mutator,
+        mutator,
         iterations=500000,
     )
     print_fuzzing_result(result)
+
+    greybox_result = orchestrate_greybox_fuzzing(
+        analyze_protocol_message,
+        [
+            "WFZ/1 token=greybox; mode=deep; stage=7; checksum=11; action=ping",
+        ],
+        mutator,
+        iterations=1000,
+    )
+    print_fuzzing_result(greybox_result)
 
 
 if __name__ == "__main__":
