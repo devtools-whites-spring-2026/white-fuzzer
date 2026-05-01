@@ -7,9 +7,9 @@ from typing import Any
 
 from src.fuzzer_coordinator import (
     orchestrate_fuzzing,
-    orchestrate_greybox_fuzzing,
+    orchestrate_greybox_fuzzing, FuzzingResult,
 )
-from src.mutator import RandomCharMutator
+from src.mutator import create_generic_mutator
 
 
 def load_module_from_path(path: str):
@@ -37,6 +37,34 @@ def resolve_target_function(
 
     raise ValueError("No function specified and no main() found")
 
+
+def print_fuzzing_result(result: FuzzingResult) -> None:
+    cr = result.coverage_report
+    fc, ft, fp = result.function_coverage
+    findings = {
+        k: v
+        for k, v in result.tests_to_report.items()
+        if not isinstance(v.thrown_exception, ValueError)
+    }
+
+    print("=== Fuzzing Report ===")
+    print()
+    covered = cr["covered"]
+    total = cr["total"]
+    percent = cr["percent"]
+    print(f"Coverage:          {covered}/{total} lines ({percent}%)")
+    print(f"Function coverage: {fc}/{ft} lines ({fp}%)")
+    print()
+    print(f"Findings: {len(findings)}")
+    for i, (input_str, exec_result) in enumerate(findings.items(), start=1):
+        print(f"  [{i}] Input:     {input_str!r}")
+        if exec_result.thrown_exception is None:
+            print(f"      New coverage: +{exec_result.new_coverage} lines")
+        else:
+            name = type(exec_result.thrown_exception).__name__
+            print(f"      Exception: {name}: {exec_result.thrown_exception}")
+    print()
+    print("=====================")
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Fuzzer CLI")
@@ -91,8 +119,7 @@ def main():
     module = load_module_from_path(str(path))
     target_func = resolve_target_function(module, args.function)
 
-    # We can extend this with multiple mutators in the future
-    mutator = RandomCharMutator()
+    mutator = create_generic_mutator()
 
     orchestrator = (
         orchestrate_greybox_fuzzing if args.greybox else orchestrate_fuzzing
@@ -105,10 +132,7 @@ def main():
         seed=args.seed,
     )
 
-    if not results:
-        print("No crashes found")
-    else:
-        print(results)
+    print_fuzzing_result(results)
 
 
 if __name__ == "__main__":
