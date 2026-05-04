@@ -48,29 +48,42 @@ class DjangoClientExecutor(Executor):
         self,
         settings_module: str,
         request_builder: Callable[[str], tuple[str, str, dict[str, str]]],
+        generate_user: bool = False,
     ) -> None:
-        self._settings_module = settings_module
         self._request_builder = request_builder
+        self._generate_user = generate_user
         self._client = None
         self._is_initialized = False
 
+        import os
+
+        import django
+
+        os.environ["DJANGO_SETTINGS_MODULE"] = settings_module
+        django.setup()
+
     def _ensure_client(self) -> Any:
-        if not self._is_initialized:
-            import django
-            from django.conf import settings
+        if self._is_initialized:
+            return self._client
+
+        if self._generate_user:
+            from django.contrib.auth import get_user_model
+            from rest_framework.test import APIClient
+
+            self._client = APIClient()
+            User = get_user_model()
+            user, _ = User.objects.get_or_create(username="fuzz")
+            user.is_active = True
+            user.set_password("fuzz")
+            user.save()
+            self._client.force_authenticate(user=user)
+        else:
             from django.test import Client
 
-            if not settings.configured:
-                from os import environ
-
-                environ.setdefault(
-                    "DJANGO_SETTINGS_MODULE", self._settings_module
-                )
-                django.setup()
             self._client = Client()
-            self._is_initialized = True
-        if self._client is None:
-            raise RuntimeError("Django test client is not initialized")
+
+        self._is_initialized = True
+
         return self._client
 
     def execute(

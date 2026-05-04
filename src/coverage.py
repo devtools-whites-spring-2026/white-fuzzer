@@ -1,7 +1,8 @@
 import os
 import sys
 from pathlib import Path
-from types import CodeType
+
+# from types import CodeType
 from typing import Any
 
 
@@ -23,12 +24,12 @@ class Coverage:
 
         self._total_lines_map: dict[str, set[int]] = self._collect_total_lines()
 
-    def _line_callback(self, code: CodeType, line_number: int) -> None:
-        filename: str = str(Path(code.co_filename).resolve())
-        if not self._is_in_scope(filename):
-            return
+    # def _line_callback(self, code: CodeType, line_number: int) -> None:
+    #     filename: str = str(Path(code.co_filename).resolve())
+    #     if not self._is_in_scope(filename):
+    #         return
 
-        self.covered_lines.add((filename, line_number))
+    #     self.covered_lines.add((filename, line_number))
 
     def _is_in_scope(self, filename: str) -> bool:
         for path in self._include_paths:
@@ -41,30 +42,57 @@ class Coverage:
                 return True
         return False
 
+    # def start(self) -> None:
+    #     if self._started:
+    #         return
+
+    #     sys.monitoring.use_tool_id(self.tool_id, "coverage")
+
+    #     sys.monitoring.register_callback(
+    #         self.tool_id, sys.monitoring.events.LINE, self._line_callback
+    #     )
+
+    #     sys.monitoring.set_events(self.tool_id, sys.monitoring.events.LINE)
+
+    #     self._started = True
+
+    # def stop(self) -> None:
+    #     if not self._started:
+    #         return
+
+    #     sys.monitoring.set_events(self.tool_id, 0)
+    #     sys.monitoring.register_callback(
+    #         self.tool_id, sys.monitoring.events.LINE, None
+    #     )
+    #     sys.monitoring.free_tool_id(self.tool_id)
+    #     self._started = False
+
+    # tmp with settrace for Testy
+    def _trace(self, frame, event, arg):
+        if event == "call":
+            filename = str(Path(frame.f_code.co_filename).resolve())
+            if not self._is_in_scope(filename):
+                return None
+            return self._trace
+        if event == "line":
+            filename = str(Path(frame.f_code.co_filename).resolve())
+            if self._is_in_scope(filename):
+                self.covered_lines.add((filename, frame.f_lineno))
+        return self._trace
+
     def start(self) -> None:
         if self._started:
             return
-
-        sys.monitoring.use_tool_id(self.tool_id, "coverage")
-
-        sys.monitoring.register_callback(
-            self.tool_id, sys.monitoring.events.LINE, self._line_callback
-        )
-
-        sys.monitoring.set_events(self.tool_id, sys.monitoring.events.LINE)
-
+        sys.settrace(self._trace)
         self._started = True
 
     def stop(self) -> None:
         if not self._started:
             return
-
-        sys.monitoring.set_events(self.tool_id, 0)
-        sys.monitoring.register_callback(
-            self.tool_id, sys.monitoring.events.LINE, None
-        )
-        sys.monitoring.free_tool_id(self.tool_id)
+        sys.settrace(None)
         self._started = False
+
+    # end settrace
 
     def reset(self) -> None:
         self.covered_lines.clear()

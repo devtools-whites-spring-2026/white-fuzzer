@@ -6,8 +6,9 @@ from pathlib import Path
 from typing import Any
 
 from src.fuzzer_coordinator import (
+    FuzzingResult,
     orchestrate_fuzzing,
-    orchestrate_greybox_fuzzing, FuzzingResult,
+    orchestrate_greybox_fuzzing,
 )
 from src.mutator import create_generic_mutator
 
@@ -65,6 +66,7 @@ def print_fuzzing_result(result: FuzzingResult) -> None:
             print(f"      Exception: {name}: {exec_result.thrown_exception}")
     print()
     print("=====================")
+
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Fuzzer CLI")

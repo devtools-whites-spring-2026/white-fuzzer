@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, NamedTuple
 
 from src.coverage import Coverage
-from src.executor import ExecutionResult, Executor, FunctionExecutor
+from src.executor import ExecutionResult, Executor, FunctionExecutor, run_target
 from src.mutator import Mutator
 
 
@@ -117,7 +117,6 @@ def orchestrate_fuzzing(
 
     if seed is not None:
         random.seed(seed)
-
 
     corpus = initial_corpus
     tests_to_report: dict[str, ExecutionResult] = {}
