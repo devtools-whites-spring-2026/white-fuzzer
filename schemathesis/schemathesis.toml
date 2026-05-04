@@ -1,0 +1,14 @@
+[parameters]
+api_version = "v2"
+
+# Run more tests for better coverage
+generation.max-examples = 10000
+
+# Increase timeout for slow APIs
+request-timeout = 10.0  # seconds
+
+[output.sanitization]
+enabled = false
+
+[reports.junit]
+enabled = true
