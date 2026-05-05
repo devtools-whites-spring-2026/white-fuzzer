@@ -6,8 +6,9 @@ from pathlib import Path
 from typing import Any
 
 from src.fuzzer_coordinator import (
+    FuzzingResult,
     orchestrate_fuzzing,
-    orchestrate_greybox_fuzzing, FuzzingResult,
+    orchestrate_greybox_fuzzing,
 )
 from src.mutator import create_generic_mutator
 
@@ -58,13 +59,15 @@ def print_fuzzing_result(result: FuzzingResult) -> None:
     print(f"Findings: {len(findings)}")
     for i, (input_str, exec_result) in enumerate(findings.items(), start=1):
         print(f"  [{i}] Input:     {input_str!r}")
-        if exec_result.thrown_exception is None:
-            print(f"      New coverage: +{exec_result.new_coverage} lines")
-        else:
-            name = type(exec_result.thrown_exception).__name__
-            print(f"      Exception: {name}: {exec_result.thrown_exception}")
+        name = type(exec_result.thrown_exception).__name__
+        print(f"      Exception: {name}: {exec_result.thrown_exception}")
+        if exec_result.traceback_text:
+            print("      Traceback:")
+            for line in exec_result.traceback_text.rstrip().splitlines():
+                print(f"        {line}")
     print()
     print("=====================")
+
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Fuzzer CLI")
