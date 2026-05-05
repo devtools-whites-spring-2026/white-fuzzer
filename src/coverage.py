@@ -11,7 +11,7 @@ class Coverage:
         project_root: str | None = None,
         include_paths: list[str] | None = None,
     ) -> None:
-        self._covered_lines: dict[str, set[int]] = {}
+        self._filename_to_covered_lines: dict[str, set[int]] = {}
         self._tool_id: int = sys.monitoring.COVERAGE_ID
         self._started: bool = False
 
@@ -52,10 +52,10 @@ class Coverage:
         if not self._is_in_scope(resolved):
             self._out_of_scope.add(code)
             return sys.monitoring.DISABLE
-        bucket = self._covered_lines.get(resolved)
+        bucket = self._filename_to_covered_lines.get(resolved)
         if bucket is None:
             bucket = set()
-            self._covered_lines[resolved] = bucket
+            self._filename_to_covered_lines[resolved] = bucket
         self._scope_cache[code] = bucket
         bucket.add(line_number)
         return None
@@ -113,14 +113,14 @@ class Coverage:
     # end settrace
 
     def reset(self) -> None:
-        self._covered_lines.clear()
+        self._filename_to_covered_lines.clear()
         self._scope_cache.clear()
         self._out_of_scope.clear()
         if self._started:
             sys.monitoring.restart_events()
 
     def get_coverage(self) -> dict[str, set[int]]:
-        return self._covered_lines
+        return self._filename_to_covered_lines
 
     def _get_file_lines(self, filename: str) -> set[int]:
         lines: set[int] = set()
@@ -160,7 +160,7 @@ class Coverage:
         total_covered: int = 0
         total_lines: int = 0
         for filename, all_lines in self._total_lines_map.items():
-            covered = self._covered_lines.get(filename)
+            covered = self._filename_to_covered_lines.get(filename)
             if covered is not None:
                 total_covered += len(covered & all_lines)
             total_lines += len(all_lines)
