@@ -43,11 +43,9 @@ def _get_target_function_coverage(
 
     if target_file is not None:
         target_path = str(Path(target_file))
-        function_covered_lines = {
-            line_number
-            for filename, line_number in coverage_collector.get_coverage()
-            if filename == target_path and line_number in function_total_lines
-        }
+        file_coverage = coverage_collector.get_coverage().get(target_path)
+        if file_coverage is not None:
+            function_covered_lines = file_coverage & function_total_lines
 
     function_total = len(function_total_lines)
     function_covered = len(function_covered_lines)
@@ -60,7 +58,12 @@ def _get_target_function_coverage(
     return function_covered, function_total, function_percent
 
 
-def _make_coverage_collector(target: Callable[[str], Any]) -> Coverage:
+def _make_coverage_collector(
+    target: Callable[[str], Any], include_paths: list[str] | None = None
+) -> Coverage:
+    if include_paths is not None:
+        return Coverage(include_paths=include_paths)
+
     target_file = inspect.getsourcefile(target)
     include_paths = (
         [str(Path(target_file))] if target_file is not None else None
@@ -76,10 +79,11 @@ def _target_coverage(
         return set()
 
     target_path = str(Path(target_file))
+    file_coverage = coverage_collector.get_coverage().get(target_path)
+    if file_coverage is None:
+        return set()
     return {
-        CoveredLine(filename, line_number)
-        for filename, line_number in coverage_collector.get_coverage()
-        if filename == target_path
+        CoveredLine(target_path, line_number) for line_number in file_coverage
     }
 
 
@@ -111,7 +115,9 @@ def orchestrate_fuzzing(
     executor: Executor | None = None,
     coverage_include_paths: list[str] | None = None,
 ) -> FuzzingResult:
-    coverage_collector = _make_coverage_collector(target)
+    coverage_collector = _make_coverage_collector(
+        target, coverage_include_paths
+    )
     coverage_collector.reset()
     active_executor = executor or FunctionExecutor(target)
 
