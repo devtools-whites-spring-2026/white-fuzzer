@@ -10,8 +10,4 @@ def before_call(context, case, kwargs):
         json={"username": "admin", "password": "password"},
     )
     hook_auth = response.json()["access"]
-    #print(case)
-    #print(response.json())
     case.headers["Authorization"] = f"Bearer {hook_auth}"
-    #case.query.pop("x-schemathesis-unknown-property", None)
-    #print(case)
