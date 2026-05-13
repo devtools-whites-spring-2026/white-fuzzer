@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import traceback
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -16,6 +16,8 @@ class ExecutionResult:
     thrown_exception: Exception | None
     traceback_text: str | None
     new_coverage: int = 0
+
+    mutation_report: MutationReport | None = field(default=None, compare=False)
 
 
 class Executor:

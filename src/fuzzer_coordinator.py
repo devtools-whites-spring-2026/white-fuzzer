@@ -7,6 +7,7 @@ from typing import Any, NamedTuple
 
 from src.coverage import Coverage
 from src.executor import ExecutionResult, Executor, FunctionExecutor, run_target
+from src.grammar_mutator import GrammarMutator
 from src.mutator import Mutator
 
 
@@ -91,6 +92,12 @@ def _energy_for_new_coverage(new_lines: set[CoveredLine]) -> int:
     return min(32, 1 + len(new_lines) * 4)
 
 
+def _attach_report(mutator: Mutator, arg: str) -> tuple[str, Any]:
+    if isinstance(mutator, GrammarMutator):
+        return mutator.mutate_with_report(arg)
+    return mutator.mutate(arg), None
+
+
 def _run_with_coverage_tracking(
     target: Callable[[str], Any],
     test_input: str,
@@ -130,8 +137,9 @@ def orchestrate_fuzzing(
         print(f"\rFuzzing progress: {i + 1}/{iterations}", end="")
 
         test = random.choice(corpus)
-        mutated_test = mutator.mutate(test)
+        mutated_test, report = _attach_report(mutator, test)
         exec_result = active_executor.execute(mutated_test, coverage_collector)
+        exec_result.mutation_report = report
 
         if exec_result.thrown_exception is not None:
             tests_to_report[mutated_test] = exec_result
@@ -182,7 +190,7 @@ def orchestrate_greybox_fuzzing(
     for _ in range(iterations):
         weights = [entry.energy for entry in corpus]
         entry = random.choices(corpus, weights=weights, k=1)[0]
-        mutated_test = mutator.mutate(entry.value)
+        mutated_test, report = _attach_report(mutator, entry.value)
 
         exec_result, new_lines = _run_with_coverage_tracking(
             target,
@@ -191,6 +199,8 @@ def orchestrate_greybox_fuzzing(
             known_target_coverage,
         )
 
+        exec_result.mutation_report = report
+        
         if exec_result.thrown_exception is not None:
             tests_to_report[mutated_test] = exec_result
 

@@ -59,6 +59,8 @@ def print_fuzzing_result(result: FuzzingResult) -> None:
     print(f"Findings: {len(findings)}")
     for i, (input_str, exec_result) in enumerate(findings.items(), start=1):
         print(f"  [{i}] Input:     {input_str!r}")
+        if exec_result.mutation_report is not None:
+            print(f"       Mutation: {exec_result.mutation_report.summary()}")
         name = type(exec_result.thrown_exception).__name__
         print(f"      Exception: {name}: {exec_result.thrown_exception}")
         if exec_result.traceback_text:
