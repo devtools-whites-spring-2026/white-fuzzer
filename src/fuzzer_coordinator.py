@@ -3,11 +3,11 @@ import random
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, NamedTuple
+from typing import Any, NamedTuple, cast
 
 from src.coverage import Coverage
 from src.executor import ExecutionResult, Executor, FunctionExecutor, run_target
-from src.mutator import Mutator
+from src.mutator import Mutatable, MutatableString, Mutator
 
 
 @dataclass
@@ -108,7 +108,7 @@ def _run_with_coverage_tracking(
 
 def orchestrate_fuzzing(
     target: Callable[[str], Any],
-    initial_corpus: list[str],
+    initial_corpus: list[Mutatable],
     mutator: Mutator,
     iterations: int = 1000,
     seed: int | None = None,
@@ -125,12 +125,12 @@ def orchestrate_fuzzing(
         random.seed(seed)
 
     corpus = initial_corpus
-    tests_to_report: dict[str, ExecutionResult] = {}
+    tests_to_report: dict[Mutatable, ExecutionResult] = {}
     for i in range(iterations):
         print(f"\rFuzzing progress: {i + 1}/{iterations}", end="")
 
-        test = random.choice(corpus)
-        mutated_test = mutator.mutate(test)
+        test: Mutatable = random.choice(corpus)
+        mutated_test = test.apply_mutator(mutator)
         exec_result = active_executor.execute(mutated_test, coverage_collector)
 
         if exec_result.thrown_exception is not None:
@@ -151,7 +151,7 @@ def orchestrate_fuzzing(
 
 def orchestrate_greybox_fuzzing(
     target: Callable[[str], Any],
-    initial_corpus: list[str],
+    initial_corpus: list[Mutatable],
     mutator: Mutator,
     iterations: int = 1000,
     seed: int | None = None,
@@ -161,6 +161,10 @@ def orchestrate_greybox_fuzzing(
 
     if seed is not None:
         random.seed(seed)
+
+    initial_corpus: list[str] = [
+        cast("MutatableString", x).arg for x in initial_corpus
+    ]
 
     corpus = [CorpusEntry(value=item) for item in initial_corpus]
     tests_to_report: dict[str, ExecutionResult] = {}

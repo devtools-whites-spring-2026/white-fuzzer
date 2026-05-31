@@ -7,6 +7,21 @@ class Mutator:
         raise NotImplementedError()
 
 
+class Mutatable:
+    # returns a new object with mutated state
+    def apply_mutator(self: Self, mutator: Mutator) -> Self:
+        pass
+
+
+class MutatableString(Mutatable):
+    def __init__(self, arg: str) -> None:
+        self.arg = arg
+
+    def apply_mutator(self: Self, mutator: Mutator) -> Self:
+        mutated_string = mutator.mutate(self.arg)
+        return MutatableString(mutated_string)
+
+
 class RandomCharMutator(Mutator):
     def mutate(self: Self, arg: str) -> str:
         n = random.randint(0, len(arg))

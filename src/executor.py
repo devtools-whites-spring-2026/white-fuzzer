@@ -3,7 +3,9 @@ from __future__ import annotations
 import logging
 import traceback
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
+
+from src.mutator import Mutatable, MutatableString
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -20,7 +22,7 @@ class ExecutionResult:
 
 class Executor:
     def execute(
-        self, argument: str, coverage_collector: Coverage
+        self, argument: Mutatable, coverage_collector: Coverage
     ) -> ExecutionResult:
         raise NotImplementedError()
 
@@ -30,12 +32,13 @@ class FunctionExecutor(Executor):
         self._target = target
 
     def execute(
-        self, argument: str, coverage_collector: Coverage
+        self, argument: Mutatable, coverage_collector: Coverage
     ) -> ExecutionResult:
         coverage_collector.start()
 
+        argument_str = cast("MutatableString", argument)
         try:
-            self._target(argument)
+            self._target(argument_str.arg)
             return ExecutionResult(None, None)
         except Exception as ex:
             return ExecutionResult(ex, traceback.format_exc())
@@ -87,11 +90,14 @@ class DjangoClientExecutor(Executor):
         return self._client
 
     def execute(
-        self, argument: str, coverage_collector: Coverage
+        self, argument: Mutatable, coverage_collector: Coverage
     ) -> ExecutionResult:
         coverage_collector.start()
         try:
-            method, path, payload = self._request_builder(argument)
+            if argument is not MutatableString:
+                raise RuntimeError("Oh no")
+            argument_prime = cast("MutatableString", argument)
+            method, path, payload = self._request_builder(argument_prime.arg)
             client = self._ensure_client()
             request_method = getattr(client, method.lower(), None)
             if request_method is None:
@@ -118,4 +124,6 @@ class DjangoClientExecutor(Executor):
 def run_target(
     target: Callable[[str], None], argument: str, coverage_collector: Coverage
 ) -> ExecutionResult:
-    return FunctionExecutor(target).execute(argument, coverage_collector)
+    return FunctionExecutor(target).execute(
+        MutatableString(argument), coverage_collector
+    )
