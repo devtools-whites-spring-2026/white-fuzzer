@@ -8,7 +8,7 @@ class Mutator:
 
 
 class Mutatable:
-    def apply_mutator(self, mutator: Mutator) -> "Mutatable":
+    def apply_mutator(self, mutator: Mutator) -> Self:
         raise NotImplementedError()
 
 
@@ -16,8 +16,8 @@ class MutatableString(Mutatable):
     def __init__(self, arg: str) -> None:
         self.arg = arg
 
-    def apply_mutator(self, mutator: Mutator) -> "MutatableString":
-        return MutatableString(mutator.mutate(self.arg))
+    def apply_mutator(self, mutator: Mutator) -> Self:
+        return type(self)(mutator.mutate(self.arg))
 
     def __repr__(self) -> str:
         return self.arg

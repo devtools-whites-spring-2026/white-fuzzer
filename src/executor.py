@@ -3,12 +3,14 @@ from __future__ import annotations
 import logging
 import traceback
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
 from src.mutatable_request import MutatableRestRequest
 from src.mutator import Mutatable, MutatableString
 
 _METHODS_WITH_BODY = {"POST", "PUT", "PATCH"}
+
+T = TypeVar("T", bound=Mutatable)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -23,28 +25,21 @@ class ExecutionResult:
     new_coverage: int = 0
 
 
-class Executor:
-    def execute(
-        self, argument: Mutatable, coverage_collector: Coverage
-    ) -> ExecutionResult:
+class Executor(Generic[T]):
+    def execute(self, argument: T, coverage_collector: Coverage) -> ExecutionResult:
         raise NotImplementedError()
 
 
-class FunctionExecutor(Executor):
+class FunctionExecutor(Executor[MutatableString]):
     def __init__(self, target: Callable[[str], None]) -> None:
         self._target = target
 
     def execute(
-        self, argument: Mutatable, coverage_collector: Coverage
+        self, argument: MutatableString, coverage_collector: Coverage
     ) -> ExecutionResult:
         coverage_collector.start()
         try:
-            if isinstance(argument, MutatableString):
-                self._target(argument.arg)
-            else:
-                raise TypeError(
-                    f"FunctionExecutor does not support {type(argument).__name__}"
-                )
+            self._target(argument.arg)
             return ExecutionResult(None, None)
         except Exception as ex:
             return ExecutionResult(ex, traceback.format_exc())
@@ -52,7 +47,7 @@ class FunctionExecutor(Executor):
             coverage_collector.stop()
 
 
-class DjangoClientExecutor(Executor):
+class DjangoClientExecutor(Executor[MutatableRestRequest]):
     def __init__(
         self,
         settings_module: str,
@@ -94,15 +89,10 @@ class DjangoClientExecutor(Executor):
         return self._client
 
     def execute(
-        self, argument: Mutatable, coverage_collector: Coverage
+        self, argument: MutatableRestRequest, coverage_collector: Coverage
     ) -> ExecutionResult:
         coverage_collector.start()
         try:
-            if not isinstance(argument, MutatableRestRequest):
-                raise TypeError(
-                    f"DjangoClientExecutor does not support {type(argument).__name__}"
-                )
-
             method = argument.type.upper()
             path = argument.url
             client = self._ensure_client()

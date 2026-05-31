@@ -1,6 +1,7 @@
 import json
 import random
 from dataclasses import dataclass
+from typing import Self
 
 from src.mutator import Mutatable, Mutator
 
@@ -23,7 +24,7 @@ class StringWithMutablePlaceholders(Mutatable):
             result = result.replace(field.placeholder, escaped)
         return result
 
-    def apply_mutator(self, mutator: Mutator) -> "StringWithMutablePlaceholders":
+    def apply_mutator(self, mutator: Mutator) -> Self:
         idx = random.randint(0, len(self.placeholders) - 1)
         new_placeholders = [
             MutatableField(
@@ -31,7 +32,7 @@ class StringWithMutablePlaceholders(Mutatable):
             )
             for i, f in enumerate(self.placeholders)
         ]
-        return StringWithMutablePlaceholders(self.data, new_placeholders)
+        return type(self)(self.data, new_placeholders)
 
     def __repr__(self) -> str:
         return self.to_string()
@@ -50,14 +51,14 @@ class MutatableRestRequest(Mutatable):
         self.params = params
         self.data = data
 
-    def apply_mutator(self, mutator: Mutator) -> "MutatableRestRequest":
+    def apply_mutator(self, mutator: Mutator) -> Self:
         targets = [x for x in [self.params, self.data] if x is not None]
         target = random.choice(targets)
         new_params = (
             target.apply_mutator(mutator) if target is self.params else self.params
         )
         new_data = target.apply_mutator(mutator) if target is self.data else self.data
-        return MutatableRestRequest(self.type, self.url, new_params, new_data)
+        return type(self)(self.type, self.url, new_params, new_data)
 
     def __repr__(self) -> str:
         return f"{self.type} {self.url} params={self.params!r} data={self.data!r}"
