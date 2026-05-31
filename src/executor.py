@@ -3,9 +3,12 @@ from __future__ import annotations
 import logging
 import traceback
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
+from src.mutatable_request import MutatableRestRequest
 from src.mutator import Mutatable, MutatableString
+
+_METHODS_WITH_BODY = {"POST", "PUT", "PATCH"}
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -35,10 +38,13 @@ class FunctionExecutor(Executor):
         self, argument: Mutatable, coverage_collector: Coverage
     ) -> ExecutionResult:
         coverage_collector.start()
-
-        argument_str = cast("MutatableString", argument)
         try:
-            self._target(argument_str.arg)
+            if isinstance(argument, MutatableString):
+                self._target(argument.arg)
+            else:
+                raise TypeError(
+                    f"FunctionExecutor does not support {type(argument).__name__}"
+                )
             return ExecutionResult(None, None)
         except Exception as ex:
             return ExecutionResult(ex, traceback.format_exc())
@@ -50,10 +56,8 @@ class DjangoClientExecutor(Executor):
     def __init__(
         self,
         settings_module: str,
-        request_builder: Callable[[str], tuple[str, str, dict[str, str]]],
         generate_user: bool = False,
     ) -> None:
-        self._request_builder = request_builder
         self._generate_user = generate_user
         self._client = None
         self._is_initialized = False
@@ -94,23 +98,32 @@ class DjangoClientExecutor(Executor):
     ) -> ExecutionResult:
         coverage_collector.start()
         try:
-            if argument is not MutatableString:
-                raise RuntimeError("Oh no")
-            argument_prime = cast("MutatableString", argument)
-            method, path, payload = self._request_builder(argument_prime.arg)
+            if not isinstance(argument, MutatableRestRequest):
+                raise TypeError(
+                    f"DjangoClientExecutor does not support {type(argument).__name__}"
+                )
+
+            method = argument.type.upper()
+            path = argument.url
             client = self._ensure_client()
             request_method = getattr(client, method.lower(), None)
             if request_method is None:
-                raise ValueError(
-                    f"Unsupported HTTP method for fuzzing: {method}"
-                )
+                raise ValueError(f"Unsupported HTTP method for fuzzing: {method}")
 
-            # Mute Django request tracebacks while fuzzing
+            import json
+
+            kwargs: dict[str, Any] = {}
+            if argument.params:
+                kwargs["data"] = json.loads(argument.params.to_string())
+            if method in _METHODS_WITH_BODY and argument.data:
+                kwargs["data"] = argument.data.to_string()
+                kwargs["content_type"] = "application/json"
+
             logger = logging.getLogger("django.request")
             previous_disabled = logger.disabled
             logger.disabled = True
             try:
-                request_method(path, data=payload)
+                request_method(path, **kwargs)
             finally:
                 logger.disabled = previous_disabled
 

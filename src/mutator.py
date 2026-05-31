@@ -8,18 +8,19 @@ class Mutator:
 
 
 class Mutatable:
-    # returns a new object with mutated state
-    def apply_mutator(self: Self, mutator: Mutator) -> Self:
-        pass
+    def apply_mutator(self, mutator: Mutator) -> "Mutatable":
+        raise NotImplementedError()
 
 
 class MutatableString(Mutatable):
     def __init__(self, arg: str) -> None:
         self.arg = arg
 
-    def apply_mutator(self: Self, mutator: Mutator) -> Self:
-        mutated_string = mutator.mutate(self.arg)
-        return MutatableString(mutated_string)
+    def apply_mutator(self, mutator: Mutator) -> "MutatableString":
+        return MutatableString(mutator.mutate(self.arg))
+
+    def __repr__(self) -> str:
+        return self.arg
 
 
 class RandomCharMutator(Mutator):

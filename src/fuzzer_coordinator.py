@@ -3,19 +3,19 @@ import random
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, NamedTuple, cast
+from typing import Any, NamedTuple
 
 from src.coverage import Coverage
-from src.executor import ExecutionResult, Executor, FunctionExecutor, run_target
-from src.mutator import Mutatable, MutatableString, Mutator
+from src.executor import ExecutionResult, Executor, FunctionExecutor
+from src.mutator import Mutatable, Mutator
 
 
 @dataclass
 class FuzzingResult:
-    tests_to_report: dict[str, ExecutionResult]
+    tests_to_report: dict[Mutatable, ExecutionResult]
     coverage_report: dict
     function_coverage: tuple[int, int, float]
-    corpus: list[str]
+    corpus: list[Mutatable]
 
 
 class CoveredLine(NamedTuple):
@@ -25,7 +25,7 @@ class CoveredLine(NamedTuple):
 
 @dataclass
 class CorpusEntry:
-    value: str
+    value: Mutatable
     energy: int = 1
 
 
@@ -50,9 +50,7 @@ def _get_target_function_coverage(
     function_total = len(function_total_lines)
     function_covered = len(function_covered_lines)
     function_percent = (
-        round(function_covered / function_total * 100, 2)
-        if function_total
-        else 0.0
+        round(function_covered / function_total * 100, 2) if function_total else 0.0
     )
 
     return function_covered, function_total, function_percent
@@ -65,9 +63,7 @@ def _make_coverage_collector(
         return Coverage(include_paths=include_paths)
 
     target_file = inspect.getsourcefile(target)
-    include_paths = (
-        [str(Path(target_file))] if target_file is not None else None
-    )
+    include_paths = [str(Path(target_file))] if target_file is not None else None
     return Coverage(include_paths=include_paths)
 
 
@@ -82,9 +78,7 @@ def _target_coverage(
     file_coverage = coverage_collector.get_coverage().get(target_path)
     if file_coverage is None:
         return set()
-    return {
-        CoveredLine(target_path, line_number) for line_number in file_coverage
-    }
+    return {CoveredLine(target_path, line_number) for line_number in file_coverage}
 
 
 def _energy_for_new_coverage(new_lines: set[CoveredLine]) -> int:
@@ -93,12 +87,14 @@ def _energy_for_new_coverage(new_lines: set[CoveredLine]) -> int:
 
 def _run_with_coverage_tracking(
     target: Callable[[str], Any],
-    test_input: str,
+    test_input: Mutatable,
     coverage_collector: Coverage,
     known_target_coverage: set[CoveredLine],
+    executor: Executor | None = None,
 ) -> tuple[ExecutionResult, set[CoveredLine]]:
     before = _target_coverage(target, coverage_collector)
-    exec_result = run_target(target, test_input, coverage_collector)
+    active_executor = executor or FunctionExecutor(target)
+    exec_result = active_executor.execute(test_input, coverage_collector)
     after = _target_coverage(target, coverage_collector)
     new_lines = after - before - known_target_coverage
     if new_lines:
@@ -115,9 +111,7 @@ def orchestrate_fuzzing(
     executor: Executor | None = None,
     coverage_include_paths: list[str] | None = None,
 ) -> FuzzingResult:
-    coverage_collector = _make_coverage_collector(
-        target, coverage_include_paths
-    )
+    coverage_collector = _make_coverage_collector(target, coverage_include_paths)
     coverage_collector.reset()
     active_executor = executor or FunctionExecutor(target)
 
@@ -141,12 +135,8 @@ def orchestrate_fuzzing(
     print(f"\rFuzzing progress: {iterations}/{iterations}")
 
     coverage_report = coverage_collector.get_stats()
-    function_coverage = _get_target_function_coverage(
-        target, coverage_collector
-    )
-    return FuzzingResult(
-        tests_to_report, coverage_report, function_coverage, corpus
-    )
+    function_coverage = _get_target_function_coverage(target, coverage_collector)
+    return FuzzingResult(tests_to_report, coverage_report, function_coverage, corpus)
 
 
 def orchestrate_greybox_fuzzing(
@@ -155,19 +145,18 @@ def orchestrate_greybox_fuzzing(
     mutator: Mutator,
     iterations: int = 1000,
     seed: int | None = None,
+    executor: Executor | None = None,
+    coverage_include_paths: list[str] | None = None,
 ) -> FuzzingResult:
-    coverage_collector = _make_coverage_collector(target)
+    coverage_collector = _make_coverage_collector(target, coverage_include_paths)
     coverage_collector.reset()
+    active_executor = executor or FunctionExecutor(target)
 
     if seed is not None:
         random.seed(seed)
 
-    initial_corpus: list[str] = [
-        cast("MutatableString", x).arg for x in initial_corpus
-    ]
-
     corpus = [CorpusEntry(value=item) for item in initial_corpus]
-    tests_to_report: dict[str, ExecutionResult] = {}
+    tests_to_report: dict[Mutatable, ExecutionResult] = {}
     known_target_coverage: set[CoveredLine] = set()
 
     for item in initial_corpus:
@@ -176,6 +165,7 @@ def orchestrate_greybox_fuzzing(
             item,
             coverage_collector,
             known_target_coverage,
+            active_executor,
         )
         if new_lines:
             tests_to_report[item] = exec_result
@@ -186,13 +176,14 @@ def orchestrate_greybox_fuzzing(
     for _ in range(iterations):
         weights = [entry.energy for entry in corpus]
         entry = random.choices(corpus, weights=weights, k=1)[0]
-        mutated_test = mutator.mutate(entry.value)
+        mutated_test = entry.value.apply_mutator(mutator)
 
         exec_result, new_lines = _run_with_coverage_tracking(
             target,
             mutated_test,
             coverage_collector,
             known_target_coverage,
+            active_executor,
         )
 
         if exec_result.thrown_exception is not None:
@@ -209,9 +200,7 @@ def orchestrate_greybox_fuzzing(
             )
 
     coverage_report = coverage_collector.get_stats()
-    function_coverage = _get_target_function_coverage(
-        target, coverage_collector
-    )
+    function_coverage = _get_target_function_coverage(target, coverage_collector)
     return FuzzingResult(
         tests_to_report,
         coverage_report,

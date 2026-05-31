@@ -7,6 +7,4 @@ INSTALLED_APPS = [
     "src.django_example.django_apps.demo_two",
 ]
 MIDDLEWARE = []
-DATABASES = {
-    "default": {"ENGINE": "django.db.backends.sqlite3", "NAME": ":memory:"}
-}
+DATABASES = {"default": {"ENGINE": "django.db.backends.sqlite3", "NAME": ":memory:"}}

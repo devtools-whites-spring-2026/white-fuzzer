@@ -10,7 +10,7 @@ from src.fuzzer_coordinator import (
     orchestrate_fuzzing,
     orchestrate_greybox_fuzzing,
 )
-from src.mutator import create_generic_mutator
+from src.mutator import MutatableString, create_generic_mutator
 
 
 def load_module_from_path(path: str):
@@ -24,9 +24,7 @@ def load_module_from_path(path: str):
     return module
 
 
-def resolve_target_function(
-    module, function_name: str | None
-) -> Callable[[str], Any]:
+def resolve_target_function(module, function_name: str | None) -> Callable[[str], Any]:
     if function_name:
         if not hasattr(module, function_name):
             raise ValueError(f"Function '{function_name}' not found in module")
@@ -124,12 +122,10 @@ def main():
 
     mutator = create_generic_mutator()
 
-    orchestrator = (
-        orchestrate_greybox_fuzzing if args.greybox else orchestrate_fuzzing
-    )
+    orchestrator = orchestrate_greybox_fuzzing if args.greybox else orchestrate_fuzzing
     results = orchestrator(
         target=target_func,
-        initial_corpus=list(args.input),
+        initial_corpus=[MutatableString(s) for s in args.input],
         mutator=mutator,
         iterations=args.iterations,
         seed=args.seed,

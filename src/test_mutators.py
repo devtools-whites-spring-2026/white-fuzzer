@@ -3,7 +3,12 @@
 # install_import_hook()
 
 from src.fuzzer_coordinator import orchestrate_fuzzing
-from src.mutator import DeleteCharMutator, InsertCharMutator, RepeatMutator
+from src.mutator import (
+    DeleteCharMutator,
+    InsertCharMutator,
+    MutatableString,
+    RepeatMutator,
+)
 
 
 def make_throw_if_wrong_length(expected_len: int):
@@ -15,8 +20,8 @@ def make_throw_if_wrong_length(expected_len: int):
     return throw_if_wrong_length
 
 
-CORPUS = ["hello"]
-TARGET = make_throw_if_wrong_length(len(CORPUS[0]))
+CORPUS = [MutatableString("hello")]
+TARGET = make_throw_if_wrong_length(len(CORPUS[0].arg))
 
 
 def test_delete_finds_shorter_string() -> None:
@@ -24,7 +29,7 @@ def test_delete_finds_shorter_string() -> None:
         TARGET, CORPUS.copy(), DeleteCharMutator()
     ).tests_to_report
     assert len(result) > 0
-    assert any(len(s) < len(CORPUS[0]) for s in result)
+    assert any(len(s.arg) < len(CORPUS[0].arg) for s in result)
 
 
 def test_insert_finds_longer_string() -> None:
@@ -32,7 +37,7 @@ def test_insert_finds_longer_string() -> None:
         TARGET, CORPUS.copy(), InsertCharMutator()
     ).tests_to_report
     assert len(result) > 0
-    assert any(len(s) > len(CORPUS[0]) for s in result)
+    assert any(len(s.arg) > len(CORPUS[0].arg) for s in result)
 
 
 def test_repeat_finds_different_length_string() -> None:
@@ -40,4 +45,4 @@ def test_repeat_finds_different_length_string() -> None:
         TARGET, CORPUS.copy(), RepeatMutator(InsertCharMutator(), max_times=5)
     ).tests_to_report
     assert len(result) > 0
-    assert any(len(s) != len(CORPUS[0]) for s in result)
+    assert any(len(s.arg) != len(CORPUS[0].arg) for s in result)
