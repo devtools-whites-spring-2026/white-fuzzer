@@ -3,7 +3,7 @@ import random
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Generic, NamedTuple, TypeVar
+from typing import Any, Generic, NamedTuple, TypeVar, cast
 
 from src.coverage import Coverage
 from src.executor import ExecutionResult, Executor, FunctionExecutor
@@ -114,7 +114,9 @@ def orchestrate_fuzzing(
 ) -> FuzzingResult[T]:
     coverage_collector = _make_coverage_collector(target, coverage_include_paths)
     coverage_collector.reset()
-    active_executor: Executor[T] = executor or FunctionExecutor(target)
+    active_executor: Executor[T] = executor or cast(
+        "Executor[T]", FunctionExecutor(target)
+    )
 
     if seed is not None:
         random.seed(seed)
@@ -151,7 +153,9 @@ def orchestrate_greybox_fuzzing(
 ) -> FuzzingResult[T]:
     coverage_collector = _make_coverage_collector(target, coverage_include_paths)
     coverage_collector.reset()
-    active_executor: Executor[T] = executor or FunctionExecutor(target)
+    active_executor: Executor[T] = executor or cast(
+        "Executor[T]", FunctionExecutor(target)
+    )
 
     if seed is not None:
         random.seed(seed)
