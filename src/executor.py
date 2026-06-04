@@ -15,7 +15,7 @@ T = TypeVar("T", bound=Mutatable)
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from src.coverage import Coverage
+    from src.coverage_tracker import CoverageTracker
 
 
 @dataclass
@@ -26,7 +26,9 @@ class ExecutionResult:
 
 
 class Executor(Generic[T]):
-    def execute(self, argument: T, coverage_collector: Coverage) -> ExecutionResult:
+    def execute(
+        self, argument: T, coverage_collector: CoverageTracker
+    ) -> ExecutionResult:
         raise NotImplementedError()
 
 
@@ -35,7 +37,7 @@ class FunctionExecutor(Executor[MutatableString]):
         self._target = target
 
     def execute(
-        self, argument: MutatableString, coverage_collector: Coverage
+        self, argument: MutatableString, coverage_collector: CoverageTracker
     ) -> ExecutionResult:
         coverage_collector.start()
         try:
@@ -88,9 +90,32 @@ class DjangoClientExecutor(Executor[MutatableRestRequest]):
 
         return self._client
 
+    def _is_django_healthy(self) -> bool:
+        if not self._is_initialized:
+            return True
+        from django.db import connections
+
+        for conn in connections.all():
+            if conn.errors_occurred:
+                return False
+            if conn.connection is not None and not conn.is_usable():
+                return False
+        return True
+
+    def _reset_client(self) -> None:
+        from django.db import connections
+
+        for conn in connections.all():
+            conn.close()
+        self._client = None
+        self._is_initialized = False
+
     def execute(
-        self, argument: MutatableRestRequest, coverage_collector: Coverage
+        self, argument: MutatableRestRequest, coverage_collector: CoverageTracker
     ) -> ExecutionResult:
+        if not self._is_django_healthy():
+            self._reset_client()
+
         coverage_collector.start()
         try:
             method = argument.type.upper()
@@ -125,7 +150,9 @@ class DjangoClientExecutor(Executor[MutatableRestRequest]):
 
 
 def run_target(
-    target: Callable[[str], None], argument: str, coverage_collector: Coverage
+    target: Callable[[str], None],
+    argument: str,
+    coverage_collector: CoverageTracker,
 ) -> ExecutionResult:
     return FunctionExecutor(target).execute(
         MutatableString(argument), coverage_collector

@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Generic, NamedTuple, TypeVar, cast
 
-from src.coverage import Coverage
+from src.coverage_tracker import CoverageTracker
 from src.executor import ExecutionResult, Executor, FunctionExecutor
 from src.mutator import Mutatable, Mutator
 
@@ -18,6 +18,7 @@ class FuzzingResult(Generic[T]):
     coverage_report: dict
     function_coverage: tuple[int, int, float]
     corpus: list[T]
+    coverage_collector: CoverageTracker | None = None
 
 
 class CoveredLine(NamedTuple):
@@ -32,7 +33,7 @@ class CorpusEntry(Generic[T]):
 
 
 def _get_target_function_coverage(
-    target: Callable[[str], Any], coverage_collector: Coverage
+    target: Callable[[str], Any], coverage_collector: CoverageTracker
 ) -> tuple[int, int, float]:
     target_file = inspect.getsourcefile(target)
     source_lines, start_line = inspect.getsourcelines(target)
@@ -45,9 +46,8 @@ def _get_target_function_coverage(
 
     if target_file is not None:
         target_path = str(Path(target_file))
-        file_coverage = coverage_collector.get_coverage().get(target_path)
-        if file_coverage is not None:
-            function_covered_lines = file_coverage & function_total_lines
+        file_coverage = coverage_collector.get_coverage_of(target_path)
+        function_covered_lines = file_coverage & function_total_lines
 
     function_total = len(function_total_lines)
     function_covered = len(function_covered_lines)
@@ -60,26 +60,24 @@ def _get_target_function_coverage(
 
 def _make_coverage_collector(
     target: Callable[[str], Any], include_paths: list[str] | None = None
-) -> Coverage:
+) -> CoverageTracker:
     if include_paths is not None:
-        return Coverage(include_paths=include_paths)
+        return CoverageTracker(include_paths=include_paths)
 
     target_file = inspect.getsourcefile(target)
     include_paths = [str(Path(target_file))] if target_file is not None else None
-    return Coverage(include_paths=include_paths)
+    return CoverageTracker(include_paths=include_paths)
 
 
 def _target_coverage(
-    target: Callable[[str], Any], coverage_collector: Coverage
+    target: Callable[[str], Any], coverage_collector: CoverageTracker
 ) -> set[CoveredLine]:
     target_file = inspect.getsourcefile(target)
     if target_file is None:
         return set()
 
     target_path = str(Path(target_file))
-    file_coverage = coverage_collector.get_coverage().get(target_path)
-    if file_coverage is None:
-        return set()
+    file_coverage = coverage_collector.get_coverage_of(target_path)
     return {CoveredLine(target_path, line_number) for line_number in file_coverage}
 
 
@@ -90,7 +88,7 @@ def _energy_for_new_coverage(new_lines: set[CoveredLine]) -> int:
 def _run_with_coverage_tracking(
     target: Callable[[str], Any],
     test_input: T,
-    coverage_collector: Coverage,
+    coverage_collector: CoverageTracker,
     known_target_coverage: set[CoveredLine],
     executor: Executor[T],
 ) -> tuple[ExecutionResult, set[CoveredLine]]:
@@ -139,7 +137,13 @@ def orchestrate_fuzzing(
 
     coverage_report = coverage_collector.get_stats()
     function_coverage = _get_target_function_coverage(target, coverage_collector)
-    return FuzzingResult(tests_to_report, coverage_report, function_coverage, corpus)
+    return FuzzingResult(
+        tests_to_report,
+        coverage_report,
+        function_coverage,
+        corpus,
+        coverage_collector=coverage_collector,
+    )
 
 
 def orchestrate_greybox_fuzzing(
@@ -211,4 +215,5 @@ def orchestrate_greybox_fuzzing(
         coverage_report,
         function_coverage,
         [entry.value for entry in corpus],
+        coverage_collector=coverage_collector,
     )
