@@ -3,7 +3,14 @@ from __future__ import annotations
 import logging
 import traceback
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Generic, TypeVar
+
+from src.mutatable_request import MutatableRestRequest
+from src.mutator import Mutatable, MutatableString
+
+_METHODS_WITH_BODY = {"POST", "PUT", "PATCH"}
+
+T = TypeVar("T", bound=Mutatable)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -18,24 +25,21 @@ class ExecutionResult:
     new_coverage: int = 0
 
 
-class Executor:
-    def execute(
-        self, argument: str, coverage_collector: Coverage
-    ) -> ExecutionResult:
+class Executor(Generic[T]):
+    def execute(self, argument: T, coverage_collector: Coverage) -> ExecutionResult:
         raise NotImplementedError()
 
 
-class FunctionExecutor(Executor):
+class FunctionExecutor(Executor[MutatableString]):
     def __init__(self, target: Callable[[str], None]) -> None:
         self._target = target
 
     def execute(
-        self, argument: str, coverage_collector: Coverage
+        self, argument: MutatableString, coverage_collector: Coverage
     ) -> ExecutionResult:
         coverage_collector.start()
-
         try:
-            self._target(argument)
+            self._target(argument.arg)
             return ExecutionResult(None, None)
         except Exception as ex:
             return ExecutionResult(ex, traceback.format_exc())
@@ -43,14 +47,12 @@ class FunctionExecutor(Executor):
             coverage_collector.stop()
 
 
-class DjangoClientExecutor(Executor):
+class DjangoClientExecutor(Executor[MutatableRestRequest]):
     def __init__(
         self,
         settings_module: str,
-        request_builder: Callable[[str], tuple[str, str, dict[str, str]]],
         generate_user: bool = False,
     ) -> None:
-        self._request_builder = request_builder
         self._generate_user = generate_user
         self._client = None
         self._is_initialized = False
@@ -87,24 +89,31 @@ class DjangoClientExecutor(Executor):
         return self._client
 
     def execute(
-        self, argument: str, coverage_collector: Coverage
+        self, argument: MutatableRestRequest, coverage_collector: Coverage
     ) -> ExecutionResult:
         coverage_collector.start()
         try:
-            method, path, payload = self._request_builder(argument)
+            method = argument.type.upper()
+            path = argument.url
             client = self._ensure_client()
             request_method = getattr(client, method.lower(), None)
             if request_method is None:
-                raise ValueError(
-                    f"Unsupported HTTP method for fuzzing: {method}"
-                )
+                raise ValueError(f"Unsupported HTTP method for fuzzing: {method}")
 
-            # Mute Django request tracebacks while fuzzing
+            import json
+
+            kwargs: dict[str, Any] = {}
+            if argument.params:
+                kwargs["data"] = json.loads(argument.params.to_string())
+            if method in _METHODS_WITH_BODY and argument.data:
+                kwargs["data"] = argument.data.to_string()
+                kwargs["content_type"] = "application/json"
+
             logger = logging.getLogger("django.request")
             previous_disabled = logger.disabled
             logger.disabled = True
             try:
-                request_method(path, data=payload)
+                request_method(path, **kwargs)
             finally:
                 logger.disabled = previous_disabled
 
@@ -118,4 +127,6 @@ class DjangoClientExecutor(Executor):
 def run_target(
     target: Callable[[str], None], argument: str, coverage_collector: Coverage
 ) -> ExecutionResult:
-    return FunctionExecutor(target).execute(argument, coverage_collector)
+    return FunctionExecutor(target).execute(
+        MutatableString(argument), coverage_collector
+    )

@@ -37,9 +37,7 @@ class Coverage:
     def _is_in_scope(self, filename: str) -> bool:
         if filename in self._include_files:
             return True
-        return any(
-            filename.startswith(prefix) for prefix in self._include_dir_prefixes
-        )
+        return any(filename.startswith(prefix) for prefix in self._include_dir_prefixes)
 
     def _line_callback(self, code: CodeType, line_number: int):
         bucket = self._scope_cache.get(code)
@@ -165,9 +163,7 @@ class Coverage:
                 total_covered += len(covered & all_lines)
             total_lines += len(all_lines)
 
-        percent: float = (
-            (total_covered / total_lines * 100) if total_lines else 0.0
-        )
+        percent: float = (total_covered / total_lines * 100) if total_lines else 0.0
 
         return {
             "covered": total_covered,

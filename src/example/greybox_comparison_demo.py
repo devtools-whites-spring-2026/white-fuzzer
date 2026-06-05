@@ -5,7 +5,7 @@ from src.fuzzer_coordinator import (
     orchestrate_greybox_fuzzing,
 )
 from src.main import print_fuzzing_result
-from src.mutator import create_generic_mutator
+from src.mutator import MutatableString, create_generic_mutator
 
 
 def main() -> None:
@@ -13,19 +13,23 @@ def main() -> None:
     result = orchestrate_fuzzing(
         parse_http_header,
         [
-            "Content-Type: text/html",
-            "Authorization: Bearer token123",
-            "X-Request-Id: abc",
+            MutatableString(s)
+            for s in [
+                "Content-Type: text/html",
+                "Authorization: Bearer token123",
+                "X-Request-Id: abc",
+            ]
         ],
         mutator,
-        iterations=500000,
+        iterations=50000,
     )
     print_fuzzing_result(result)
 
+    ping = "WFZ/1 token=greybox; mode=deep; stage=7; checksum=11; action=ping"
     greybox_result = orchestrate_greybox_fuzzing(
         analyze_protocol_message,
         [
-            "WFZ/1 token=greybox; mode=deep; stage=7; checksum=11; action=ping",
+            MutatableString(ping),
         ],
         mutator,
         iterations=1000,
