@@ -9,6 +9,7 @@ from typing import Any, Generic, NamedTuple, TypeVar, cast
 from src.coverage_tracker import CoverageTracker
 from src.executor import ExecutionResult, Executor, FunctionExecutor
 from src.mutator import Mutatable, Mutator
+from src.openapi_schema import EndpointSchema, request_schema_to_mutatable
 
 T = TypeVar("T", bound=Mutatable)
 
@@ -191,6 +192,7 @@ def orchestrate_fuzzing(
     executor: Executor[T] | None = None,
     coverage_include_paths: list[str] | None = None,
     branch: bool = False,
+    specification: list[EndpointSchema] | None = None,
 ) -> FuzzingResult[T]:
     coverage_collector = _make_coverage_collector(
         target, coverage_include_paths, branch=branch
@@ -203,7 +205,13 @@ def orchestrate_fuzzing(
     if seed is not None:
         random.seed(seed)
 
-    corpus, corpus_fingerprints = _deduplicate_inputs(initial_corpus)
+    corpus = initial_corpus
+    if specification is not None:
+        for endpoint_schema in specification:
+            samples_from_spec = request_schema_to_mutatable(endpoint_schema)
+            corpus += cast("list[T]", samples_from_spec)
+
+    corpus, corpus_fingerprints = _deduplicate_inputs(corpus)
     tests_to_report: dict[T, ExecutionResult] = {}
     reported_fingerprints: set[str] = set()
     for i in range(iterations):

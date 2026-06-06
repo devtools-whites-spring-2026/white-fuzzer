@@ -25,6 +25,8 @@ class StringWithMutablePlaceholders(Mutatable):
         return result
 
     def apply_mutator(self, mutator: Mutator) -> Self:
+        if not self.placeholders:
+            return type(self)(self.data, [])
         idx = random.randint(0, len(self.placeholders) - 1)
         new_placeholders = [
             MutatableField(
@@ -53,6 +55,8 @@ class MutatableRestRequest(Mutatable):
 
     def apply_mutator(self, mutator: Mutator) -> Self:
         targets = [x for x in [self.params, self.data] if x is not None]
+        if not targets:
+            return type(self)(self.type, self.url, self.params, self.data)
         target = random.choice(targets)
         new_params = (
             target.apply_mutator(mutator) if target is self.params else self.params

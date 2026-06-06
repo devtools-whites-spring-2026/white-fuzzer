@@ -8,6 +8,9 @@ from typing import TYPE_CHECKING, Any, Generic, TypeVar
 from src.mutatable_request import MutatableRestRequest
 from src.mutator import Mutatable, MutatableString
 
+if TYPE_CHECKING:
+    from src.openapi_schema import EndpointSchema
+
 _METHODS_WITH_BODY = {"POST", "PUT", "PATCH"}
 
 T = TypeVar("T", bound=Mutatable)
@@ -46,15 +49,46 @@ class FunctionExecutor(Executor[MutatableString]):
             return ExecutionResult(ex, traceback.format_exc())
 
 
+def _find_matching_endpoint(
+    spec: list[EndpointSchema], path: str, method: str
+) -> EndpointSchema | None:
+    for endpoint in spec:
+        if endpoint.get("path") == path and endpoint.get("method") == method.upper():
+            return endpoint
+    return None
+
+
+class SpecMismatchException(Exception):
+    def __init__(
+        self,
+        *,
+        actual_code: int,
+        method: str,
+        path: str,
+        expected_codes: set[int],
+    ) -> None:
+        self.actual_code = actual_code
+        self.method = method
+        self.path = path
+        self.expected_codes = expected_codes
+        message = (
+            f"Unexpected status code {actual_code} for {method} {path}; "
+            f"expected one of {sorted(expected_codes)}"
+        )
+        super().__init__(message)
+
+
 class DjangoClientExecutor(Executor[MutatableRestRequest]):
     def __init__(
         self,
         settings_module: str,
         generate_user: bool = False,
+        openapi_spec: list[EndpointSchema] | None = None,
     ) -> None:
         self._generate_user = generate_user
         self._client = None
         self._is_initialized = False
+        self.openapi_spec = openapi_spec
 
         import os
 
@@ -134,9 +168,22 @@ class DjangoClientExecutor(Executor[MutatableRestRequest]):
             previous_disabled = logger.disabled
             logger.disabled = True
             try:
-                request_method(path, **kwargs)
+                response = request_method(path, **kwargs)
             finally:
                 logger.disabled = previous_disabled
+
+            if self.openapi_spec is not None:
+                endpoint = _find_matching_endpoint(self.openapi_spec, path, method)
+                if endpoint is not None:
+                    expected_codes = set(endpoint.get("responses", {}).keys())
+                    actual_code = response.status_code
+                    if actual_code not in expected_codes:
+                        raise SpecMismatchException(
+                            actual_code=actual_code,
+                            method=method,
+                            path=path,
+                            expected_codes=expected_codes,
+                        )
 
             return ExecutionResult(None, None)
         except Exception as ex:
