@@ -52,6 +52,11 @@ def print_fuzzing_result(result: FuzzingResult) -> None:
     total = cr["total"]
     percent = cr["percent"]
     print(f"Coverage:          {covered}/{total} lines ({percent}%)")
+    if cr.get("branches_total"):
+        bc = cr["branches_covered"]
+        bt = cr["branches_total"]
+        bp = cr["branches_percent"]
+        print(f"Branch coverage:   {bc}/{bt} branches ({bp}%)")
     print(f"Function coverage: {fc}/{ft} lines ({fp}%)")
     print()
     print(f"Findings: {len(findings)}")
@@ -106,6 +111,18 @@ def parse_args():
         action="store_true",
     )
 
+    parser.add_argument(
+        "--report",
+        default=None,
+        help="Comma-separated report formats: html,json,xml,lcov",
+    )
+
+    parser.add_argument(
+        "--report-dir",
+        default="./reports",
+        help="Directory to write coverage reports to (default: ./reports)",
+    )
+
     return parser.parse_args()
 
 
@@ -132,6 +149,11 @@ def main():
     )
 
     print_fuzzing_result(results)
+
+    if args.report and results.coverage_collector is not None:
+        formats = [f.strip() for f in args.report.split(",") if f.strip()]
+        results.coverage_collector.export(args.report_dir, formats)
+        print(f"Reports written to {args.report_dir}")
 
 
 if __name__ == "__main__":
