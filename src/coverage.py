@@ -30,8 +30,9 @@ class Coverage:
             elif p.is_dir():
                 self._include_dir_prefixes.append(path + os.sep)
 
-        self._scope_cache: dict[CodeType, set[int]] = {}
+        self._scope_cache: dict[CodeType, tuple[str, set[int]]] = {}
         self._out_of_scope: set[CodeType] = set()
+        self._current_run_covered_lines: dict[str, set[int]] = {}
         self._total_lines_map: dict[str, set[int]] = self._collect_total_lines()
 
     def _is_in_scope(self, filename: str) -> bool:
@@ -40,9 +41,11 @@ class Coverage:
         return any(filename.startswith(prefix) for prefix in self._include_dir_prefixes)
 
     def _line_callback(self, code: CodeType, line_number: int):
-        bucket = self._scope_cache.get(code)
-        if bucket is not None:
+        cached = self._scope_cache.get(code)
+        if cached is not None:
+            filename, bucket = cached
             bucket.add(line_number)
+            self._current_run_covered_lines.setdefault(filename, set()).add(line_number)
             return None
         if code in self._out_of_scope:
             return sys.monitoring.DISABLE
@@ -54,14 +57,16 @@ class Coverage:
         if bucket is None:
             bucket = set()
             self._filename_to_covered_lines[resolved] = bucket
-        self._scope_cache[code] = bucket
+        self._scope_cache[code] = (resolved, bucket)
         bucket.add(line_number)
+        self._current_run_covered_lines.setdefault(resolved, set()).add(line_number)
         return None
 
     def start(self) -> None:
         if self._started:
             return
 
+        self._current_run_covered_lines.clear()
         sys.monitoring.use_tool_id(self._tool_id, "coverage")
 
         sys.monitoring.register_callback(
@@ -114,11 +119,18 @@ class Coverage:
         self._filename_to_covered_lines.clear()
         self._scope_cache.clear()
         self._out_of_scope.clear()
+        self._current_run_covered_lines.clear()
         if self._started:
             sys.monitoring.restart_events()
 
     def get_coverage(self) -> dict[str, set[int]]:
         return self._filename_to_covered_lines
+
+    def get_last_run_coverage(self) -> dict[str, set[int]]:
+        return {
+            filename: covered_lines.copy()
+            for filename, covered_lines in self._current_run_covered_lines.items()
+        }
 
     def _get_file_lines(self, filename: str) -> set[int]:
         lines: set[int] = set()
