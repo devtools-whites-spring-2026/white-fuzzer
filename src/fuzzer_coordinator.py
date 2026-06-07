@@ -59,14 +59,16 @@ def _get_target_function_coverage(
 
 
 def _make_coverage_collector(
-    target: Callable[[str], Any], include_paths: list[str] | None = None
+    target: Callable[[str], Any],
+    include_paths: list[str] | None = None,
+    branch: bool = False,
 ) -> CoverageTracker:
     if include_paths is not None:
-        return CoverageTracker(include_paths=include_paths)
+        return CoverageTracker(include_paths=include_paths, branch=branch)
 
     target_file = inspect.getsourcefile(target)
     include_paths = [str(Path(target_file))] if target_file is not None else None
-    return CoverageTracker(include_paths=include_paths)
+    return CoverageTracker(include_paths=include_paths, branch=branch)
 
 
 def _target_coverage(
@@ -93,7 +95,9 @@ def _run_with_coverage_tracking(
     executor: Executor[T],
 ) -> tuple[ExecutionResult, set[CoveredLine]]:
     before = _target_coverage(target, coverage_collector)
+    coverage_collector.start()
     exec_result = executor.execute(test_input, coverage_collector)
+    coverage_collector.stop()
     after = _target_coverage(target, coverage_collector)
     new_lines = after - before - known_target_coverage
     if new_lines:
@@ -109,8 +113,11 @@ def orchestrate_fuzzing(
     seed: int | None = None,
     executor: Executor[T] | None = None,
     coverage_include_paths: list[str] | None = None,
+    branch: bool = False,
 ) -> FuzzingResult[T]:
-    coverage_collector = _make_coverage_collector(target, coverage_include_paths)
+    coverage_collector = _make_coverage_collector(
+        target, coverage_include_paths, branch=branch
+    )
     coverage_collector.reset()
     active_executor: Executor[T] = executor or cast(
         "Executor[T]", FunctionExecutor(target)
@@ -126,7 +133,9 @@ def orchestrate_fuzzing(
 
         test = random.choice(corpus)
         mutated_test = test.apply_mutator(mutator)
+        coverage_collector.start()
         exec_result = active_executor.execute(mutated_test, coverage_collector)
+        coverage_collector.stop()
 
         if exec_result.thrown_exception is not None:
             tests_to_report[mutated_test] = exec_result
@@ -154,8 +163,11 @@ def orchestrate_greybox_fuzzing(
     seed: int | None = None,
     executor: Executor[T] | None = None,
     coverage_include_paths: list[str] | None = None,
+    branch: bool = False,
 ) -> FuzzingResult[T]:
-    coverage_collector = _make_coverage_collector(target, coverage_include_paths)
+    coverage_collector = _make_coverage_collector(
+        target, coverage_include_paths, branch=branch
+    )
     coverage_collector.reset()
     active_executor: Executor[T] = executor or cast(
         "Executor[T]", FunctionExecutor(target)

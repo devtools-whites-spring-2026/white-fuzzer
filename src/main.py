@@ -5,6 +5,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from src.coverage_benchmark import BenchmarkSample, run_coverage_benchmark
 from src.fuzzer_coordinator import (
     FuzzingResult,
     orchestrate_fuzzing,
@@ -98,7 +99,7 @@ def parse_args():
     parser.add_argument(
         "--input",
         nargs="+",
-        default=["hello"],
+        default=["Content-Type: text/html"],
     )
 
     parser.add_argument(
@@ -123,7 +124,40 @@ def parse_args():
         help="Directory to write coverage reports to (default: ./reports)",
     )
 
+    parser.add_argument(
+        "--branch",
+        action="store_true",
+        help="Collect branch coverage in addition to line coverage",
+    )
+
+    parser.add_argument(
+        "--benchmark-coverage",
+        action="store_true",
+        help="Run coverage collection benchmark at varying iteration counts",
+    )
+
+    parser.add_argument(
+        "--benchmark-iterations",
+        nargs="+",
+        type=int,
+        default=[100, 1000, 10000, 100000, 1000000],
+        help="Iteration counts to use for coverage benchmark",
+    )
+
     return parser.parse_args()
+
+
+def print_benchmark_samples(samples: list[BenchmarkSample]) -> None:
+    print()
+    print("=== Coverage benchmark ===")
+    print("iterations | seconds       | iters/sec")
+    for sample in samples:
+        print(
+            f"{sample.iterations:10d} | "
+            f"{sample.elapsed_seconds:13.6f} | "
+            f"{sample.iters_per_second:12.1f}"
+        )
+    print("==========================")
 
 
 def main():
@@ -146,6 +180,7 @@ def main():
         mutator=mutator,
         iterations=args.iterations,
         seed=args.seed,
+        branch=args.branch,
     )
 
     print_fuzzing_result(results)
@@ -154,6 +189,15 @@ def main():
         formats = [f.strip() for f in args.report.split(",") if f.strip()]
         results.coverage_collector.export(args.report_dir, formats)
         print(f"Reports written to {args.report_dir}")
+
+    if args.benchmark_coverage:
+        samples = run_coverage_benchmark(
+            target=target_func,
+            initial_corpus=list(args.input),
+            mutator=mutator,
+            iteration_counts=args.benchmark_iterations,
+        )
+        print_benchmark_samples(samples)
 
 
 if __name__ == "__main__":
