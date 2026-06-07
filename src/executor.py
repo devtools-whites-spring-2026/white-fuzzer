@@ -39,14 +39,11 @@ class FunctionExecutor(Executor[MutatableString]):
     def execute(
         self, argument: MutatableString, coverage_collector: CoverageTracker
     ) -> ExecutionResult:
-        coverage_collector.start()
         try:
             self._target(argument.arg)
             return ExecutionResult(None, None)
         except Exception as ex:
             return ExecutionResult(ex, traceback.format_exc())
-        finally:
-            coverage_collector.stop()
 
 
 class DjangoClientExecutor(Executor[MutatableRestRequest]):
@@ -116,7 +113,6 @@ class DjangoClientExecutor(Executor[MutatableRestRequest]):
         if not self._is_django_healthy():
             self._reset_client()
 
-        coverage_collector.start()
         try:
             method = argument.type.upper()
             path = argument.url
@@ -145,8 +141,6 @@ class DjangoClientExecutor(Executor[MutatableRestRequest]):
             return ExecutionResult(None, None)
         except Exception as ex:
             return ExecutionResult(ex, traceback.format_exc())
-        finally:
-            coverage_collector.stop()
 
 
 def run_target(
