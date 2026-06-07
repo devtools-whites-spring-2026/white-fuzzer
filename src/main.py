@@ -123,6 +123,12 @@ def parse_args():
         help="Directory to write coverage reports to (default: ./reports)",
     )
 
+    parser.add_argument(
+        "--branch",
+        action="store_true",
+        help="Collect branch coverage in addition to line coverage",
+    )
+
     return parser.parse_args()
 
 
@@ -146,6 +152,7 @@ def main():
         mutator=mutator,
         iterations=args.iterations,
         seed=args.seed,
+        branch=args.branch,
     )
 
     print_fuzzing_result(results)
