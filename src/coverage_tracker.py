@@ -31,6 +31,9 @@ class CoverageTracker:
         self._branch: bool = branch
         self._started: bool = False
         self._lines_cache: dict[str, set[int]] | None = None
+        self._last_run_lines_cache: dict[str, set[int]] | None = None
+        self._last_run_context: str | None = None
+        self._run_counter: int = 0
         self._cov: _CovLib = self._build_cov()
 
     def _build_cov(self) -> _CovLib:
@@ -57,7 +60,11 @@ class CoverageTracker:
     def start(self) -> None:
         if self._started:
             return
+        self._run_counter += 1
+        self._last_run_context = f"fuzzer-run-{self._run_counter}"
+        self._last_run_lines_cache = None
         self._cov.start()
+        self._cov.switch_context(self._last_run_context)
         self._started = True
         self._lines_cache = None
 
@@ -67,6 +74,7 @@ class CoverageTracker:
         self._cov.stop()
         self._started = False
         self._lines_cache = None
+        self._last_run_lines_cache = None
 
     def reset(self) -> None:
         if self._started:
@@ -74,6 +82,9 @@ class CoverageTracker:
             self._started = False
         self._cov = self._build_cov()
         self._lines_cache = None
+        self._last_run_lines_cache = None
+        self._last_run_context = None
+        self._run_counter = 0
 
     @staticmethod
     def _normalize(path: str) -> str:
@@ -90,6 +101,21 @@ class CoverageTracker:
 
     def get_coverage_of(self, filename: str) -> set[int]:
         return self.get_coverage().get(self._normalize(filename), set())
+
+    def get_last_run_coverage(self) -> dict[str, set[int]]:
+        if self._last_run_context is None:
+            return {}
+        if self._last_run_lines_cache is None:
+            data = self._cov.get_data()
+            data.set_query_context(self._last_run_context)
+            try:
+                self._last_run_lines_cache = {
+                    self._normalize(fn): set(data.lines(fn) or ())
+                    for fn in data.measured_files()
+                }
+            finally:
+                data.set_query_contexts(None)
+        return self._last_run_lines_cache
 
     def _iter_source_files(self):
         seen: set[str] = set()

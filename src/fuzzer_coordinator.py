@@ -64,7 +64,7 @@ def _record_test_to_report(
 
 
 def _target_run_coverage(
-    target: Callable[[str], Any], coverage_collector: Coverage
+    target: Callable[[str], Any], coverage_collector: CoverageTracker
 ) -> set[CoveredLine]:
     target_file = inspect.getsourcefile(target)
     if target_file is None:
