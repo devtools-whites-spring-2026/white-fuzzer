@@ -4,7 +4,7 @@ import contextlib
 import itertools
 import json
 from enum import Enum
-from typing import Any, Literal, TypedDict
+from typing import Any, Literal, TypedDict, TypeVar
 
 from src.mutatable_request import (
     MutatableField,
@@ -51,6 +51,144 @@ class EndpointSchema(TypedDict, total=False):
     request: RequestSchema
     responses: dict[int, ResponseInfo]
     parameters: list[SchemaField]
+
+
+class SchemaFieldValue(TypedDict, total=False):
+    name: str
+    type: FieldType
+    constraints: FieldConstraints
+    value_placeholder: str
+    array_elems: list[SchemaFieldValue]
+    properties: dict[str, SchemaFieldValue]
+
+
+def fresh_placeholder() -> str:
+    return f"PLC{next_counter_fixed_width()}"
+
+
+T = TypeVar("T")
+
+
+def _flatmap(data: dict[str, list[T]]) -> list[dict[str, T]]:
+    if not data:
+        return [{}]
+    keys = list(data)
+    value_lists = [data[key] for key in keys]
+    return [
+        dict(zip(keys, values, strict=True))
+        for values in itertools.product(*value_lists)
+    ]
+
+
+def _is_required(field: SchemaField) -> bool:
+    return field.get("constraints", {}).get("required", False)
+
+
+def _transform_object_properties(
+    properties: dict[str, SchemaField],
+) -> list[dict[str, SchemaFieldValue]]:
+    required_fields = {
+        name: field for name, field in properties.items() if _is_required(field)
+    }
+    optional_fields = {
+        name: field for name, field in properties.items() if not _is_required(field)
+    }
+
+    required_variants = _flatmap(
+        {name: transform(field) for name, field in required_fields.items()}
+    )
+
+    results = list(required_variants)
+    for name, field in optional_fields.items():
+        for required_variant in required_variants:
+            for optional_variant in transform(field):
+                results.append({**required_variant, name: optional_variant})
+    return results
+
+
+def transform(field: SchemaField) -> list[SchemaFieldValue]:
+    field_type = field.get("type", FieldType.STRING)
+
+    if field_type == FieldType.STRING:
+        return [
+            {
+                "name": field["name"],
+                "type": field_type,
+                "constraints": field["constraints"],
+                "value_placeholder": fresh_placeholder(),
+                "array_elems": [],
+                "properties": {},
+            }
+        ]
+
+    if field_type == FieldType.ARRAY:
+        items = field["items"]
+        result: list[SchemaFieldValue] = [
+            {
+                "name": field["name"],
+                "type": field_type,
+                "constraints": field["constraints"],
+                "value_placeholder": fresh_placeholder(),
+                "array_elems": [],
+                "properties": {},
+            }
+        ]
+        for item_variant in transform(items):
+            result.append(
+                {
+                    "name": field["name"],
+                    "type": field_type,
+                    "constraints": field["constraints"],
+                    "value_placeholder": fresh_placeholder(),
+                    "array_elems": [item_variant],
+                    "properties": {},
+                }
+            )
+        return result
+
+    if field_type == FieldType.OBJECT:
+        properties = field.get("properties", {})
+        return [
+            {
+                "name": field["name"],
+                "type": field_type,
+                "constraints": field["constraints"],
+                "value_placeholder": fresh_placeholder(),
+                "array_elems": [],
+                "properties": variant,
+            }
+            for variant in _transform_object_properties(properties)
+        ]
+
+    raise RuntimeError("Oh no")
+
+
+statuses_post_endpoint: EndpointSchema = {
+    "path": "/api/v2/statuses/",
+    "method": "POST",
+    "description": "",
+    "request": {"content_type": "application/json", "schema": {}},
+    "responses": {201: {"status_code": 201, "description": ""}},
+    "parameters": [
+        {
+            "name": "data",
+            "type": FieldType.OBJECT,
+            "constraints": {"required": True},
+            "properties": {
+                "id": {"name": "id", "type": FieldType.STRING, "constraints": {}},
+                "url": {"name": "url", "type": FieldType.STRING, "constraints": {}},
+                "name": {"name": "name", "type": FieldType.STRING, "constraints": {}},
+                "color": {"name": "color", "type": FieldType.STRING, "constraints": {}},
+                "type": {"name": "type", "type": FieldType.STRING, "constraints": {}},
+                "project": {
+                    "name": "project",
+                    "type": FieldType.STRING,
+                    "constraints": {},
+                },
+            },
+        }
+    ],
+}
 
 
 def _resolve_ref(ref_obj: dict, schema_dict: dict) -> dict:
@@ -160,7 +298,7 @@ def _default_str(field: SchemaField) -> str:
 counter = 0
 
 
-def next_counter():
+def next_counter_fixed_width():
     global counter
     result = counter
     counter += 1
@@ -179,7 +317,7 @@ def _json_template(schema: dict[str, SchemaField]) -> tuple[str, list[MutatableF
                 if items is not None and items.get("type") == FieldType.OBJECT:
                     obj[name] = [walk(items.get("properties", {}))]
                 elif items is not None:
-                    placeholder = f"PLC{next_counter()}__"
+                    placeholder = f"PLC{next_counter_fixed_width()}__"
                     obj[name] = [placeholder]
                     placeholders.append(
                         MutatableField(placeholder, _default_str(items))
@@ -189,7 +327,7 @@ def _json_template(schema: dict[str, SchemaField]) -> tuple[str, list[MutatableF
             elif field_type == FieldType.OBJECT:
                 obj[name] = walk(field.get("properties", {}))
             else:
-                placeholder = f"PLC{next_counter()}__"
+                placeholder = f"PLC{next_counter_fixed_width()}__"
                 obj[name] = placeholder
                 placeholders.append(MutatableField(placeholder, _default_str(field)))
         return obj
@@ -227,6 +365,84 @@ def request_schema_to_mutatable(request: EndpointSchema) -> list[MutatableRestRe
             data = StringWithMutablePlaceholders(template_str, placeholders)
 
     return [MutatableRestRequest(method, path, query_params, data)]
+
+
+def _render_field_value(
+    field: SchemaFieldValue,
+    placeholders: list[MutatableField],
+) -> Any:
+    field_type = field.get("type", FieldType.STRING)
+    if field_type == FieldType.STRING:
+        placeholder = field["value_placeholder"]
+        placeholders.append(MutatableField(placeholder, ""))
+        return placeholder
+    if field_type == FieldType.ARRAY:
+        return [
+            _render_field_value(array_field, placeholders)
+            for array_field in field.get("array_elems", [])
+        ]
+    if field_type == FieldType.OBJECT:
+        return {
+            name: _render_field_value(prop, placeholders)
+            for name, prop in field.get("properties", {}).items()
+        }
+    raise RuntimeError("Oh no")
+
+
+def _render_object_template(
+    fields: dict[str, SchemaFieldValue],
+) -> tuple[str, list[MutatableField]]:
+    placeholders: list[MutatableField] = []
+    rendered = {
+        name: _render_field_value(field, placeholders) for name, field in fields.items()
+    }
+    return json.dumps(rendered), placeholders
+
+
+def _transform_top_level_fields(
+    fields: dict[str, SchemaField],
+) -> list[dict[str, SchemaFieldValue]]:
+    if not fields:
+        return [{}]
+    return _transform_object_properties(fields)
+
+
+def _to_mutable_string(
+    fields: dict[str, SchemaFieldValue],
+    keep_empty: bool,
+) -> StringWithMutablePlaceholders | None:
+    if not fields and not keep_empty:
+        return None
+    template, placeholders = _render_object_template(fields)
+    return StringWithMutablePlaceholders(template, placeholders)
+
+
+def request_schema_to_mutatable_alternative(
+    request: EndpointSchema,
+) -> list[MutatableRestRequest]:
+    path = request.get("path", "/")
+    method = request.get("method", "GET")
+    body_schema = request.get("request", {}).get("schema", {})
+    parameters = request.get("parameters", [])
+
+    parameter_fields = {
+        param["name"]: param for param in parameters if param.get("name")
+    }
+    query_variants = _transform_top_level_fields(parameter_fields)
+    body_variants = _transform_top_level_fields(body_schema)
+
+    requests: list[MutatableRestRequest] = []
+    for query_variant in query_variants:
+        for body_variant in body_variants:
+            requests.append(
+                MutatableRestRequest(
+                    method,
+                    path,
+                    params=_to_mutable_string(query_variant, keep_empty=False),
+                    data=_to_mutable_string(body_variant, keep_empty=bool(body_schema)),
+                )
+            )
+    return requests
 
 
 def demo_openapi_parsing() -> None:
@@ -311,5 +527,49 @@ def demo_openapi_parsing() -> None:
     print(json.dumps(endpoints, default=str, indent=2))
 
 
+def demo2():
+    endp: EndpointSchema = {
+        "path": "/api/v2/statuses/",
+        "method": "POST",
+        "description": "",
+        "request": {"content_type": "application/json", "schema": {}},
+        "responses": {201: {"status_code": 201, "description": ""}},
+        "parameters": [
+            {
+                "name": "data",
+                "type": FieldType.OBJECT,
+                "constraints": {"required": True},
+                "properties": {
+                    "id": {"name": "id", "type": FieldType.STRING, "constraints": {}},
+                    "url": {"name": "url", "type": FieldType.STRING, "constraints": {}},
+                    "name": {
+                        "name": "name",
+                        "type": FieldType.STRING,
+                        "constraints": {},
+                    },
+                    "color": {
+                        "name": "color",
+                        "type": FieldType.STRING,
+                        "constraints": {},
+                    },
+                    "type": {
+                        "name": "type",
+                        "type": FieldType.STRING,
+                        "constraints": {},
+                    },
+                    "project": {
+                        "name": "project",
+                        "type": FieldType.STRING,
+                        "constraints": {},
+                    },
+                },
+            }
+        ],
+    }
+    data = request_schema_to_mutatable(endp)
+    print(data)
+
+
 if __name__ == "__main__":
-    demo_openapi_parsing()
+    demo2()
+    # demo_openapi_parsing()
