@@ -1,7 +1,8 @@
 import inspect
 import random
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
+from hashlib import sha256
 from pathlib import Path
 from typing import Any, Generic, NamedTuple, TypeVar, cast
 
@@ -30,6 +31,82 @@ class CoveredLine(NamedTuple):
 class CorpusEntry(Generic[T]):
     value: T
     energy: int = 1
+
+
+def _input_fingerprint(value: Mutatable) -> str:
+    return repr(value)
+
+
+def _deduplicate_inputs(values: Iterable[T]) -> tuple[list[T], set[str]]:
+    deduplicated: list[T] = []
+    fingerprints: set[str] = set()
+    for value in values:
+        fingerprint = _input_fingerprint(value)
+        if fingerprint in fingerprints:
+            continue
+        deduplicated.append(value)
+        fingerprints.add(fingerprint)
+    return deduplicated, fingerprints
+
+
+def _record_test_to_report(
+    tests_to_report: dict[T, ExecutionResult],
+    reported_fingerprints: set[str],
+    test_input: T,
+    exec_result: ExecutionResult,
+    run_coverage: set[CoveredLine],
+) -> None:
+    fingerprint = _finding_fingerprint(exec_result, run_coverage)
+    if fingerprint in reported_fingerprints:
+        return
+    tests_to_report[test_input] = exec_result
+    reported_fingerprints.add(fingerprint)
+
+
+def _target_run_coverage(
+    target: Callable[[str], Any], coverage_collector: Coverage
+) -> set[CoveredLine]:
+    target_file = inspect.getsourcefile(target)
+    if target_file is None:
+        return set()
+
+    target_path = str(Path(target_file))
+    covered_lines = coverage_collector.get_last_run_coverage().get(target_path)
+    if covered_lines is None:
+        return set()
+    return {CoveredLine(target_path, line_number) for line_number in covered_lines}
+
+
+def _exception_signature(exec_result: ExecutionResult) -> tuple[str, ...]:
+    exception = exec_result.thrown_exception
+    if exception is None:
+        return ("no-exception",)
+
+    exception_type = type(exception)
+    frames = (
+        line.strip()
+        for line in (exec_result.traceback_text or "").splitlines()
+        if line.strip().startswith("File ")
+    )
+    return (
+        f"{exception_type.__module__}.{exception_type.__qualname__}",
+        *frames,
+    )
+
+
+def _finding_fingerprint(
+    exec_result: ExecutionResult, run_coverage: set[CoveredLine]
+) -> str:
+    payload = "\n".join(
+        (
+            *_exception_signature(exec_result),
+            *(
+                f"{covered_line.filename}:{covered_line.line_number}"
+                for covered_line in sorted(run_coverage)
+            ),
+        )
+    )
+    return sha256(payload.encode()).hexdigest()
 
 
 def _get_target_function_coverage(
@@ -91,14 +168,14 @@ def _run_with_coverage_tracking(
     coverage_collector: CoverageTracker,
     known_target_coverage: set[CoveredLine],
     executor: Executor[T],
-) -> tuple[ExecutionResult, set[CoveredLine]]:
+) -> tuple[ExecutionResult, set[CoveredLine], set[CoveredLine]]:
     before = _target_coverage(target, coverage_collector)
     exec_result = executor.execute(test_input, coverage_collector)
     after = _target_coverage(target, coverage_collector)
     new_lines = after - before - known_target_coverage
     if new_lines:
         exec_result.new_coverage = len(new_lines)
-    return exec_result, new_lines
+    return exec_result, new_lines, _target_run_coverage(target, coverage_collector)
 
 
 def orchestrate_fuzzing(
@@ -119,19 +196,29 @@ def orchestrate_fuzzing(
     if seed is not None:
         random.seed(seed)
 
-    corpus = initial_corpus
+    corpus, corpus_fingerprints = _deduplicate_inputs(initial_corpus)
     tests_to_report: dict[T, ExecutionResult] = {}
+    reported_fingerprints: set[str] = set()
     for i in range(iterations):
         print(f"\rFuzzing progress: {i + 1}/{iterations}", end="")
 
         test = random.choice(corpus)
         mutated_test = test.apply_mutator(mutator)
         exec_result = active_executor.execute(mutated_test, coverage_collector)
+        run_coverage = _target_run_coverage(target, coverage_collector)
 
         if exec_result.thrown_exception is not None:
-            tests_to_report[mutated_test] = exec_result
-            if random.randint(0, 1000):
+            _record_test_to_report(
+                tests_to_report,
+                reported_fingerprints,
+                mutated_test,
+                exec_result,
+                run_coverage,
+            )
+            fingerprint = _input_fingerprint(mutated_test)
+            if fingerprint not in corpus_fingerprints and random.randint(0, 1000):
                 corpus.append(mutated_test)
+                corpus_fingerprints.add(fingerprint)
 
     print(f"\rFuzzing progress: {iterations}/{iterations}")
 
@@ -164,12 +251,18 @@ def orchestrate_greybox_fuzzing(
     if seed is not None:
         random.seed(seed)
 
-    corpus: list[CorpusEntry[T]] = [CorpusEntry(value=item) for item in initial_corpus]
+    deduplicated_initial_corpus, corpus_fingerprints = _deduplicate_inputs(
+        initial_corpus
+    )
+    corpus: list[CorpusEntry[T]] = [
+        CorpusEntry(value=item) for item in deduplicated_initial_corpus
+    ]
     tests_to_report: dict[T, ExecutionResult] = {}
+    reported_fingerprints: set[str] = set()
     known_target_coverage: set[CoveredLine] = set()
 
-    for item in initial_corpus:
-        exec_result, new_lines = _run_with_coverage_tracking(
+    for item in deduplicated_initial_corpus:
+        exec_result, new_lines, run_coverage = _run_with_coverage_tracking(
             target,
             item,
             coverage_collector,
@@ -177,9 +270,21 @@ def orchestrate_greybox_fuzzing(
             active_executor,
         )
         if new_lines:
-            tests_to_report[item] = exec_result
+            _record_test_to_report(
+                tests_to_report,
+                reported_fingerprints,
+                item,
+                exec_result,
+                run_coverage,
+            )
         if exec_result.thrown_exception is not None:
-            tests_to_report[item] = exec_result
+            _record_test_to_report(
+                tests_to_report,
+                reported_fingerprints,
+                item,
+                exec_result,
+                run_coverage,
+            )
         known_target_coverage |= new_lines
 
     for _ in range(iterations):
@@ -187,7 +292,7 @@ def orchestrate_greybox_fuzzing(
         entry = random.choices(corpus, weights=weights, k=1)[0]
         mutated_test = entry.value.apply_mutator(mutator)
 
-        exec_result, new_lines = _run_with_coverage_tracking(
+        exec_result, new_lines, run_coverage = _run_with_coverage_tracking(
             target,
             mutated_test,
             coverage_collector,
@@ -196,17 +301,32 @@ def orchestrate_greybox_fuzzing(
         )
 
         if exec_result.thrown_exception is not None:
-            tests_to_report[mutated_test] = exec_result
+            _record_test_to_report(
+                tests_to_report,
+                reported_fingerprints,
+                mutated_test,
+                exec_result,
+                run_coverage,
+            )
 
         if new_lines:
-            tests_to_report[mutated_test] = exec_result
-            known_target_coverage |= new_lines
-            corpus.append(
-                CorpusEntry(
-                    value=mutated_test,
-                    energy=_energy_for_new_coverage(new_lines),
-                )
+            _record_test_to_report(
+                tests_to_report,
+                reported_fingerprints,
+                mutated_test,
+                exec_result,
+                run_coverage,
             )
+            known_target_coverage |= new_lines
+            fingerprint = _input_fingerprint(mutated_test)
+            if fingerprint not in corpus_fingerprints:
+                corpus.append(
+                    CorpusEntry(
+                        value=mutated_test,
+                        energy=_energy_for_new_coverage(new_lines),
+                    )
+                )
+                corpus_fingerprints.add(fingerprint)
 
     coverage_report = coverage_collector.get_stats()
     function_coverage = _get_target_function_coverage(target, coverage_collector)
