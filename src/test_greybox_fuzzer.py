@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import inspect
+from pathlib import Path
+
+from src.coverage_tracker import CoverageTracker
 from src.executor import ExecutionResult
 from src.fuzzer_coordinator import (
     CoveredLine,
@@ -66,6 +70,17 @@ def crashes_on_distinct_paths(value: str) -> None:
         raise RuntimeError("same exception type and message")
 
 
+def last_run_coverage_target(value: str) -> str:
+    if value == "left":
+        return "left"
+    return "right"
+
+
+def _line_number_with_text(function, text: str) -> int:
+    lines, start_line = inspect.getsourcelines(function)
+    return next(start_line + index for index, line in enumerate(lines) if text in line)
+
+
 def test_blackbox_does_not_retain_interesting_non_crashing_inputs() -> None:
     result = orchestrate_fuzzing(
         branching_target,
@@ -113,6 +128,30 @@ def test_blackbox_keeps_crashes_with_different_coverage() -> None:
     )
 
     assert [repr(item) for item in result.tests_to_report] == ["left", "right"]
+
+
+def test_coverage_tracker_reports_only_last_run_lines() -> None:
+    tracker = CoverageTracker(include_paths=[__file__])
+    path = str(Path(__file__).resolve())
+    left_line = _line_number_with_text(last_run_coverage_target, 'return "left"')
+    right_line = _line_number_with_text(last_run_coverage_target, 'return "right"')
+
+    tracker.start()
+    last_run_coverage_target("left")
+    tracker.stop()
+
+    left_run_lines = tracker.get_last_run_coverage()[path]
+
+    tracker.start()
+    last_run_coverage_target("right")
+    tracker.stop()
+
+    right_run_lines = tracker.get_last_run_coverage()[path]
+
+    assert left_line in left_run_lines
+    assert right_line not in left_run_lines
+    assert right_line in right_run_lines
+    assert left_line not in right_run_lines
 
 
 def test_greybox_promotes_new_coverage_and_reaches_deep_branch() -> None:
