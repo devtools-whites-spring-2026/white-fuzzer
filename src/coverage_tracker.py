@@ -2,9 +2,8 @@ import os
 from pathlib import Path
 from typing import Any
 
-from coverage.env import PYBEHAVIOR
-
 from coverage import Coverage as _CovLib
+from coverage.env import PYBEHAVIOR
 
 # sys.monitoring BRANCH_LEFT/RIGHT events were only added in Python 3.14.0a6.
 # On earlier interpreter coverage.py silently falls back from sysmon to
@@ -21,7 +20,7 @@ class CoverageTracker:
         self,
         project_root: str | None = None,
         include_paths: list[str] | None = None,
-        branch: bool = True,
+        branch: bool = False,
     ) -> None:
         self._project_root: str = project_root or str(Path.cwd())
         include_roots = include_paths or [self._project_root]
@@ -31,6 +30,7 @@ class CoverageTracker:
         self._branch: bool = branch
         self._started: bool = False
         self._lines_cache: dict[str, set[int]] | None = None
+        self._raw_path_cache: dict[str, str] = {}
         self._last_run_lines_cache: dict[str, set[int]] | None = None
         self._last_run_context: str | None = None
         self._run_counter: int = 0
@@ -82,6 +82,7 @@ class CoverageTracker:
             self._started = False
         self._cov = self._build_cov()
         self._lines_cache = None
+        self._raw_path_cache = {}
         self._last_run_lines_cache = None
         self._last_run_context = None
         self._run_counter = 0
@@ -100,7 +101,30 @@ class CoverageTracker:
         return self._lines_cache
 
     def get_coverage_of(self, filename: str) -> set[int]:
-        return self.get_coverage().get(self._normalize(filename), set())
+        collector = getattr(self._cov, "_collector", None)
+        if collector is not None:
+            collector.flush_data()
+        data = getattr(self._cov, "_data", None)
+        if data is None:
+            return set()
+
+        lines = data.lines(filename)
+        if lines is None:
+            key = self._normalize(filename)
+            if key != filename:
+                lines = data.lines(key)
+            if lines is None:
+                raw = self._raw_path_cache.get(key)
+                if raw is None:
+                    for fn in data.measured_files():
+                        if self._normalize(fn) == key:
+                            raw = fn
+                            self._raw_path_cache[key] = fn
+                            break
+                if raw is not None:
+                    lines = data.lines(raw)
+
+        return set(lines or ())
 
     def get_last_run_coverage(self) -> dict[str, set[int]]:
         if self._last_run_context is None:
