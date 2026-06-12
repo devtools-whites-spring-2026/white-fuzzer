@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import logging
 import traceback
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Generic, TypeVar
+from urllib.parse import urlencode
 
 from src.mutatable_request import MutatableRestRequest
 from src.mutator import Mutatable, MutatableString
@@ -23,6 +24,19 @@ class ExecutionResult:
     thrown_exception: Exception | None
     traceback_text: str | None
     new_coverage: int = 0
+    status_code: int | None = None
+    curl_command: str | None = None
+
+    def to_dict(self) -> dict:
+        exc = self.thrown_exception
+        return {
+            "exception_type": type(exc).__name__ if exc else None,
+            "exception_message": str(exc) if exc else None,
+            "traceback": self.traceback_text,
+            "new_coverage": self.new_coverage,
+            "status_code": self.status_code,
+            "curl_command": self.curl_command,
+        }
 
 
 class Executor(Generic[T]):
@@ -46,6 +60,22 @@ class FunctionExecutor(Executor[MutatableString]):
             return ExecutionResult(ex, traceback.format_exc())
 
 
+def _build_curl_command(method: str, base_url: str, params_str: str | None, body_str: str | None) -> str:
+    url = base_url
+    if params_str:
+        try:
+            import json as _json
+            params_dict = _json.loads(params_str)
+            url = f"{base_url}?{urlencode(params_dict)}"
+        except Exception:
+            url = f"{base_url}?{params_str}"
+
+    parts = ["curl", "-X", method, f'"{url}"']
+    if body_str:
+        parts += ["-H", '"Content-Type: application/json"', "-d", f"'{body_str}'"]
+    return " ".join(parts)
+
+
 class DjangoClientExecutor(Executor[MutatableRestRequest]):
     def __init__(
         self,
@@ -57,7 +87,6 @@ class DjangoClientExecutor(Executor[MutatableRestRequest]):
         self._is_initialized = False
 
         import os
-
         import django
 
         os.environ["DJANGO_SETTINGS_MODULE"] = settings_module
@@ -84,7 +113,6 @@ class DjangoClientExecutor(Executor[MutatableRestRequest]):
             self._client = Client()
 
         self._is_initialized = True
-
         return self._client
 
     def _is_django_healthy(self) -> bool:
@@ -124,21 +152,26 @@ class DjangoClientExecutor(Executor[MutatableRestRequest]):
             import json
 
             kwargs: dict[str, Any] = {}
-            if argument.params:
-                kwargs["data"] = json.loads(argument.params.to_string())
-            if method in _METHODS_WITH_BODY and argument.data:
-                kwargs["data"] = argument.data.to_string()
+            params_str = argument.params.to_string() if argument.params else None
+            body_str = argument.data.to_string() if argument.data else None
+
+            if params_str:
+                kwargs["data"] = json.loads(params_str)
+            if method in _METHODS_WITH_BODY and body_str:
+                kwargs["data"] = body_str
                 kwargs["content_type"] = "application/json"
+
+            curl = _build_curl_command(method, path, params_str, body_str)
 
             logger = logging.getLogger("django.request")
             previous_disabled = logger.disabled
             logger.disabled = True
             try:
-                request_method(path, **kwargs)
+                response = request_method(path, **kwargs)
             finally:
                 logger.disabled = previous_disabled
 
-            return ExecutionResult(None, None)
+            return ExecutionResult(None, None, status_code=response.status_code, curl_command=curl)
         except Exception as ex:
             return ExecutionResult(ex, traceback.format_exc())
 
