@@ -73,7 +73,8 @@ class SpecMismatchException(Exception):
         self.expected_codes = expected_codes
         self.response_data = data
         message = (
-            f"Unexpected status code {actual_code}  with data {data} for {method} {path}; "
+            f"Unexpected status code {actual_code}  with data {data} "
+            f"for {method} {path}; "
             f"expected one of {sorted(expected_codes)}"
         )
         super().__init__(message)
@@ -160,16 +161,21 @@ class DjangoClientExecutor(Executor[MutatableRestRequest]):
 
             kwargs: dict[str, Any] = {}
             if argument.params:
-                kwargs["data"] = json.loads(argument.params.to_string())
-            if method in _METHODS_WITH_BODY and argument.data:
-                kwargs["data"] = argument.data.to_string()
+                kwargs["query_param"] = json.loads(argument.params.to_string())
+                if method not in _METHODS_WITH_BODY:
+                    kwargs["format"] = "json"
+            if method in _METHODS_WITH_BODY:
+                if argument.data:
+                    kwargs["data"] = argument.data.to_string()
+                else:
+                    kwargs["data"] = {}
                 kwargs["content_type"] = "application/json"
 
             logger = logging.getLogger("django.request")
             previous_disabled = logger.disabled
             logger.disabled = True
             try:
-                response = request_method(path, format="json", **kwargs)
+                response = request_method(path, **kwargs)
             finally:
                 logger.disabled = previous_disabled
 

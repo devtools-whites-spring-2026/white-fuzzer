@@ -1,7 +1,7 @@
 import json
 import random
 from dataclasses import dataclass
-from typing import Self
+from typing import Any, Self
 
 from src.mutator import Mutatable, Mutator
 
@@ -66,3 +66,66 @@ class MutatableRestRequest(Mutatable):
 
     def __repr__(self) -> str:
         return f"{self.type} {self.url} params={self.params!r} data={self.data!r}"
+
+
+def _drop_none_values(obj: Any) -> Any:
+    if isinstance(obj, dict):
+        return {k: _drop_none_values(v) for k, v in obj.items() if v is not None}
+    if isinstance(obj, list):
+        return [_drop_none_values(v) for v in obj]
+    return obj
+
+
+def extract_test_cases_from_dir(directory: str) -> list[MutatableRestRequest]:
+    result = []
+    from pathlib import Path
+
+    for file in Path(directory).iterdir():
+        with file.open() as f:
+            tests = json.load(f)
+            for test in tests:
+                prp_params = PrpJson()
+                params_template = prp_params.prepare_json(test["query_params"])
+                params = StringWithMutablePlaceholders(
+                    json.dumps(_drop_none_values(params_template)),
+                    prp_params.placeholders,
+                )
+
+                prp_data = PrpJson()
+                data_template = prp_data.prepare_json(test["data"])
+                data = StringWithMutablePlaceholders(
+                    json.dumps(_drop_none_values(data_template)), prp_data.placeholders
+                )
+
+                case = MutatableRestRequest(
+                    request_type=test["method-type"],
+                    url=test["url"],
+                    params=params,
+                    data=data,
+                )
+                result.append(case)
+    return result
+
+
+class PrpJson:
+    def __init__(self) -> None:
+        self.plc_counter = 0
+        self.placeholders = []
+
+    def prepare_json(self, data: Any) -> Any:
+        if isinstance(data, dict):
+            result = {}
+            for key, value in data.items():
+                result[key] = self.prepare_json(value)
+            return result
+        if isinstance(data, list):
+            result = []
+            for value in data:
+                result.append(self.prepare_json(value))
+            return result
+        if isinstance(data, str):
+            placeholder = f"PLC{self.plc_counter:03d}"
+            self.placeholders.append(MutatableField(placeholder, data))
+            self.plc_counter += 1
+            return placeholder
+        return data
