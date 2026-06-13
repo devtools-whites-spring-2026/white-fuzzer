@@ -9,7 +9,7 @@ from typing import Any, Generic, NamedTuple, TypeVar, cast
 from src.coverage_tracker import CoverageTracker
 from src.executor import ExecutionResult, Executor, FunctionExecutor
 from src.mutator import Mutatable, Mutator
-from src.openapi_schema import EndpointSchema, request_schema_to_mutatable
+from src.openapi_schema import EndpointSchema, request_schema_to_mutatable_alternative
 
 T = TypeVar("T", bound=Mutatable)
 
@@ -208,7 +208,7 @@ def orchestrate_fuzzing(
     corpus = initial_corpus
     if specification is not None:
         for endpoint_schema in specification:
-            samples_from_spec = request_schema_to_mutatable(endpoint_schema)
+            samples_from_spec = request_schema_to_mutatable_alternative(endpoint_schema)
             corpus += cast("list[T]", samples_from_spec)
 
     corpus, corpus_fingerprints = _deduplicate_inputs(corpus)

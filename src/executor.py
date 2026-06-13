@@ -61,8 +61,8 @@ def _find_matching_endpoint(
 class SpecMismatchException(Exception):
     def __init__(
         self,
-        *,
         actual_code: int,
+        data: Any,
         method: str,
         path: str,
         expected_codes: set[int],
@@ -71,8 +71,9 @@ class SpecMismatchException(Exception):
         self.method = method
         self.path = path
         self.expected_codes = expected_codes
+        self.response_data = data
         message = (
-            f"Unexpected status code {actual_code} for {method} {path}; "
+            f"Unexpected status code {actual_code}  with data {data} for {method} {path}; "
             f"expected one of {sorted(expected_codes)}"
         )
         super().__init__(message)
@@ -168,7 +169,7 @@ class DjangoClientExecutor(Executor[MutatableRestRequest]):
             previous_disabled = logger.disabled
             logger.disabled = True
             try:
-                response = request_method(path, **kwargs)
+                response = request_method(path, format="json", **kwargs)
             finally:
                 logger.disabled = previous_disabled
 
@@ -180,6 +181,7 @@ class DjangoClientExecutor(Executor[MutatableRestRequest]):
                     if actual_code not in expected_codes:
                         raise SpecMismatchException(
                             actual_code=actual_code,
+                            data=getattr(response, "data", None),
                             method=method,
                             path=path,
                             expected_codes=expected_codes,
