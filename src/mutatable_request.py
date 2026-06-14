@@ -37,6 +37,20 @@ class StringWithMutablePlaceholders(Mutatable):
     def __repr__(self) -> str:
         return self.to_string()
 
+    def to_dict(self) -> dict:
+        return {
+            "data": self.data,
+            "placeholders": [
+                {"placeholder": f.placeholder, "value": f.value}
+                for f in self.placeholders
+            ],
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "StringWithMutablePlaceholders":
+        placeholders = [MutatableField(**p) for p in d["placeholders"]]
+        return cls(d["data"], placeholders)
+
 
 class MutatableRestRequest(Mutatable):
     def __init__(
@@ -62,3 +76,19 @@ class MutatableRestRequest(Mutatable):
 
     def __repr__(self) -> str:
         return f"{self.type} {self.url} params={self.params!r} data={self.data!r}"
+
+    def to_dict(self) -> dict:
+        return {
+            "type": self.type,
+            "url": self.url,
+            "params": self.params.to_dict() if self.params else None,
+            "data": self.data.to_dict() if self.data else None,
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "MutatableRestRequest":
+        params = StringWithMutablePlaceholders.from_dict(
+            d["params"]) if d.get("params") else None
+        data = StringWithMutablePlaceholders.from_dict(
+            d["data"]) if d.get("data") else None
+        return cls(d["type"], d["url"], params, data)

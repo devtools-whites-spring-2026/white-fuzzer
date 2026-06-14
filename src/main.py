@@ -5,12 +5,13 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from src.analysis_writer import load_corpus_from_analysis, save_analysis
 from src.fuzzer_coordinator import (
     FuzzingResult,
     orchestrate_fuzzing,
     orchestrate_greybox_fuzzing,
 )
-from src.mutator import MutatableString, create_generic_mutator
+from src.mutator import Mutatable, MutatableString, create_generic_mutator
 
 
 def load_module_from_path(path: str):
@@ -64,6 +65,10 @@ def print_fuzzing_result(result: FuzzingResult) -> None:
         print(f"  [{i}] Input:     {input_str!r}")
         name = type(exec_result.thrown_exception).__name__
         print(f"      Exception: {name}: {exec_result.thrown_exception}")
+        if exec_result.status_code is not None:
+            print(f"       Status code: {exec_result.status_code}")
+        if exec_result.curl_command is not None:
+            print(f"       curl: {exec_result.curl_command}")
         if exec_result.traceback_text:
             print("      Traceback:")
             for line in exec_result.traceback_text.rstrip().splitlines():
@@ -129,6 +134,20 @@ def parse_args():
         help="Collect branch coverage in addition to line coverage",
     )
 
+    parser.add_argument(
+        "--save-analysis",
+        default=None,
+        metavar="FILE",
+        help="Save analysis to JSON file",
+    )
+
+    parser.add_argument(
+        "--resume-from",
+        default=None,
+        metavar="FILE",
+        help="Load analysis from JSON and continue",
+    )
+
     return parser.parse_args()
 
 
@@ -145,10 +164,19 @@ def main():
 
     mutator = create_generic_mutator()
 
+    initial_corpus: list[Mutatable] = [MutatableString(s) for s in args.input]
+    if args.resume_from:
+        try:
+            resumed = load_corpus_from_analysis(args.resume_from)
+            initial_corpus = resumed + initial_corpus
+            print(f"Loaded {len(resumed)} corpus entries from {args.resume_from}")
+        except Exception as e:
+            print(f"Warning: could not load corpus from {args.resume_from}: {e}")
+
     orchestrator = orchestrate_greybox_fuzzing if args.greybox else orchestrate_fuzzing
     results = orchestrator(
         target=target_func,
-        initial_corpus=[MutatableString(s) for s in args.input],
+        initial_corpus=initial_corpus,
         mutator=mutator,
         iterations=args.iterations,
         seed=args.seed,
@@ -161,6 +189,18 @@ def main():
         formats = [f.strip() for f in args.report.split(",") if f.strip()]
         results.coverage_collector.export(args.report_dir, formats)
         print(f"Reports written to {args.report_dir}")
+
+    if args.save_analysis:
+        mode = "greybox" if args.greybox else "blackbox"
+        save_analysis(
+            results,
+            args.save_analysis,
+            seed=args.seed,
+            iterations=args.iterations,
+            target=str(path),
+            mode=mode,
+        )
+        print(f"Analysis saved to {args.save_analysis}")
 
 
 if __name__ == "__main__":
