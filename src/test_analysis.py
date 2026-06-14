@@ -1,24 +1,26 @@
-
 import json
-import sys
 import os
 import tempfile
 import unittest
-from pathlib import Path
-from unittest.mock import MagicMock, patch
+from typing import cast
+from unittest.mock import MagicMock
 
-from src.executor import ExecutionResult, _build_curl_command
-from src.mutator import MutatableString
-from src.mutatable_request import MutatableField, MutatableRestRequest, StringWithMutablePlaceholders
 from src.analysis_writer import (
-    _serialize_input,
     _deserialize_input,
-    save_analysis,
+    _serialize_input,
     load_corpus_from_analysis,
+    save_analysis,
 )
+from src.executor import ExecutionResult, _build_curl_command
+from src.mutatable_request import (
+    MutatableField,
+    MutatableRestRequest,
+    StringWithMutablePlaceholders,
+)
+from src.mutator import MutatableString
+
 
 class TestExecutionResultToDict(unittest.TestCase):
-
     def test_no_exception(self):
         r = ExecutionResult(thrown_exception=None, traceback_text=None, new_coverage=5)
         d = r.to_dict()
@@ -30,7 +32,9 @@ class TestExecutionResultToDict(unittest.TestCase):
 
     def test_with_exception(self):
         exc = ValueError("bad input")
-        r = ExecutionResult(thrown_exception=exc, traceback_text="Traceback...", new_coverage=0)
+        r = ExecutionResult(
+            thrown_exception=exc, traceback_text="Traceback...", new_coverage=0
+        )
         d = r.to_dict()
         self.assertEqual(d["exception_type"], "ValueError")
         self.assertEqual(d["exception_message"], "bad input")
@@ -49,13 +53,17 @@ class TestExecutionResultToDict(unittest.TestCase):
 
     def test_to_dict_is_json_serializable(self):
         exc = RuntimeError("oops")
-        r = ExecutionResult(thrown_exception=exc, traceback_text="tb", new_coverage=2,
-                            status_code=500, curl_command="curl ...")
+        r = ExecutionResult(
+            thrown_exception=exc,
+            traceback_text="tb",
+            new_coverage=2,
+            status_code=500,
+            curl_command="curl ...",
+        )
         json.dumps(r.to_dict())
 
 
 class TestBuildCurlCommand(unittest.TestCase):
-
     def test_get_no_params(self):
         cmd = _build_curl_command("GET", "/api/items", None, None)
         self.assertIn("-X GET", cmd)
@@ -79,7 +87,6 @@ class TestBuildCurlCommand(unittest.TestCase):
 
 
 class TestMutatableStringSerialization(unittest.TestCase):
-
     def test_serialize_deserialize_roundtrip(self):
         original = MutatableString("hello world")
         serialized = _serialize_input(original)
@@ -88,6 +95,7 @@ class TestMutatableStringSerialization(unittest.TestCase):
 
         restored = _deserialize_input(serialized)
         self.assertIsInstance(restored, MutatableString)
+        restored = cast("MutatableString", restored)
         self.assertEqual(restored.arg, "hello world")
         self.assertEqual(repr(restored), repr(original))
 
@@ -95,16 +103,20 @@ class TestMutatableStringSerialization(unittest.TestCase):
         s = MutatableString("")
         d = _serialize_input(s)
         restored = _deserialize_input(d)
+        self.assertIsInstance(restored, MutatableString)
+        restored = cast("MutatableString", restored)
         self.assertEqual(restored.arg, "")
 
     def test_serialize_special_chars(self):
         s = MutatableString('{"key": "val\\nue"}')
         d = _serialize_input(s)
         restored = _deserialize_input(d)
+        self.assertIsInstance(restored, MutatableString)
+        restored = cast("MutatableString", restored)
         self.assertEqual(restored.arg, s.arg)
 
-class TestMutatableRestRequestSerialization(unittest.TestCase):
 
+class TestMutatableRestRequestSerialization(unittest.TestCase):
     def _make_request(self):
         params = StringWithMutablePlaceholders(
             data='{"page": "PAGE_VAL"}',
@@ -130,6 +142,10 @@ class TestMutatableRestRequestSerialization(unittest.TestCase):
         restored = MutatableRestRequest.from_dict(d)
         self.assertEqual(restored.type, req.type)
         self.assertEqual(restored.url, req.url)
+        assert restored.params is not None
+        assert restored.data is not None
+        assert req.params is not None
+        assert req.data is not None
         self.assertEqual(restored.params.to_string(), req.params.to_string())
         self.assertEqual(restored.data.to_string(), req.data.to_string())
 
@@ -139,6 +155,7 @@ class TestMutatableRestRequestSerialization(unittest.TestCase):
         self.assertEqual(serialized["kind"], "rest_request")
         restored = _deserialize_input(serialized)
         self.assertIsInstance(restored, MutatableRestRequest)
+        restored = cast("MutatableRestRequest", restored)
         self.assertEqual(restored.url, req.url)
 
     def test_no_params_no_data(self):
@@ -155,9 +172,7 @@ class TestMutatableRestRequestSerialization(unittest.TestCase):
         json.dumps(_serialize_input(req))
 
 
-
 class TestStringWithMutablePlaceholdersSerialization(unittest.TestCase):
-
     def test_roundtrip(self):
         obj = StringWithMutablePlaceholders(
             data="hello PLACE",
@@ -181,36 +196,55 @@ class TestStringWithMutablePlaceholdersSerialization(unittest.TestCase):
 
 
 class TestDeserializeUnknownKind(unittest.TestCase):
-
     def test_raises_on_unknown_kind(self):
         with self.assertRaises(ValueError):
             _deserialize_input({"kind": "foobar"})
+
 
 def _make_mock_fuzzing_result(corpus, findings=None):
     result = MagicMock()
     result.corpus = corpus
     result.tests_to_report = findings or {}
-    result.coverage_report = {"covered": 10, "total": 20, "percent": 50.0,
-                               "branches_covered": 4, "branches_total": 8, "branches_percent": 50.0}
+    result.coverage_report = {
+        "covered": 10,
+        "total": 20,
+        "percent": 50.0,
+        "branches_covered": 4,
+        "branches_total": 8,
+        "branches_percent": 50.0,
+    }
     result.function_coverage = (5, 10, 50.0)
     return result
 
 
 class TestSaveAndLoadAnalysis(unittest.TestCase):
-
     def test_save_creates_file(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = os.path.join(tmp, "analysis.json")
             result = _make_mock_fuzzing_result([MutatableString("hello")])
-            save_analysis(result, path, seed=42, iterations=100, target="target.py", mode="blackbox")
+            save_analysis(
+                result,
+                path,
+                seed=42,
+                iterations=100,
+                target="target.py",
+                mode="blackbox",
+            )
             self.assertTrue(os.path.exists(path))
 
     def test_saved_json_is_valid(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = os.path.join(tmp, "analysis.json")
             result = _make_mock_fuzzing_result([MutatableString("hello")])
-            save_analysis(result, path, seed=42, iterations=100, target="target.py", mode="greybox")
-            with open(path) as f:
+            save_analysis(
+                result,
+                path,
+                seed=42,
+                iterations=100,
+                target="target.py",
+                mode="greybox",
+            )
+            with open(path, encoding="utf-8") as f:
                 data = json.load(f)
             self.assertEqual(data["metadata"]["seed"], 42)
             self.assertEqual(data["metadata"]["mode"], "greybox")
@@ -228,8 +262,11 @@ class TestSaveAndLoadAnalysis(unittest.TestCase):
             loaded = load_corpus_from_analysis(path)
             self.assertEqual(len(loaded), 2)
             self.assertIsInstance(loaded[0], MutatableString)
-            self.assertEqual(loaded[0].arg, "foo")
-            self.assertEqual(loaded[1].arg, "bar baz")
+            self.assertIsInstance(loaded[1], MutatableString)
+            first = cast("MutatableString", loaded[0])
+            second = cast("MutatableString", loaded[1])
+            self.assertEqual(first.arg, "foo")
+            self.assertEqual(second.arg, "bar baz")
 
     def test_corpus_roundtrip_rest_request(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -245,8 +282,10 @@ class TestSaveAndLoadAnalysis(unittest.TestCase):
             loaded = load_corpus_from_analysis(path)
             self.assertEqual(len(loaded), 1)
             self.assertIsInstance(loaded[0], MutatableRestRequest)
-            self.assertEqual(loaded[0].url, "/api/search")
-            self.assertEqual(loaded[0].params.to_string(), params.to_string())
+            item = cast("MutatableRestRequest", loaded[0])
+            assert item.params is not None
+            self.assertEqual(item.url, "/api/search")
+            self.assertEqual(item.params.to_string(), params.to_string())
 
     def test_findings_serialized(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -261,12 +300,11 @@ class TestSaveAndLoadAnalysis(unittest.TestCase):
                 curl_command="curl ...",
             )
             result = _make_mock_fuzzing_result(
-                corpus=[inp],
-                findings={inp: exec_result},
+                corpus=[inp], findings={inp: exec_result}
             )
             save_analysis(result, path)
 
-            with open(path) as f:
+            with open(path, encoding="utf-8") as f:
                 data = json.load(f)
 
             findings = data["findings"]
@@ -297,15 +335,13 @@ class TestSaveAndLoadAnalysis(unittest.TestCase):
             path = os.path.join(tmp, "analysis.json")
             result = _make_mock_fuzzing_result([MutatableString("x")])
             save_analysis(result, path, seed=None)
-            with open(path) as f:
+            with open(path, encoding="utf-8") as f:
                 data = json.load(f)
             self.assertIsNone(data["metadata"]["seed"])
 
 
 class TestIntegrationSaveResume(unittest.TestCase):
-
     def test_full_pipeline(self):
-
         from src.fuzzer_coordinator import orchestrate_fuzzing
         from src.mutator import create_generic_mutator
 
@@ -325,7 +361,9 @@ class TestIntegrationSaveResume(unittest.TestCase):
                 iterations=50,
                 seed=1,
             )
-            save_analysis(result1, path, seed=1, iterations=50, target="inline", mode="blackbox")
+            save_analysis(
+                result1, path, seed=1, iterations=50, target="inline", mode="blackbox"
+            )
 
             self.assertTrue(os.path.exists(path))
 
@@ -342,8 +380,10 @@ class TestIntegrationSaveResume(unittest.TestCase):
                 seed=2,
             )
             self.assertIsNotNone(result2)
-            save_analysis(result2, path, seed=2, iterations=30, target="inline", mode="blackbox")
-            with open(path) as f:
+            save_analysis(
+                result2, path, seed=2, iterations=30, target="inline", mode="blackbox"
+            )
+            with open(path, encoding="utf-8") as f:
                 data = json.load(f)
             self.assertEqual(data["metadata"]["seed"], 2)
 

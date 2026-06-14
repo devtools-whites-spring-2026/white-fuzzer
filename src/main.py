@@ -10,7 +10,7 @@ from src.fuzzer_coordinator import (
     orchestrate_fuzzing,
     orchestrate_greybox_fuzzing,
 )
-from src.mutator import MutatableString, create_generic_mutator
+from src.mutator import Mutatable, MutatableString, create_generic_mutator
 from src.analysis_writer import save_analysis, load_corpus_from_analysis
 
 
@@ -164,7 +164,7 @@ def main():
 
     mutator = create_generic_mutator()
 
-    initial_corpus: list[MutatableString] = [MutatableString(s) for s in args.input]
+    initial_corpus: list[Mutatable] = [MutatableString(s) for s in args.input]
     if args.resume_from:
         try:
             resumed = load_corpus_from_analysis(args.resume_from)

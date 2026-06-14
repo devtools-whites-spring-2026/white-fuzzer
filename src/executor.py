@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import traceback
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Generic, TypeVar
 from urllib.parse import urlencode
 
@@ -60,7 +60,9 @@ class FunctionExecutor(Executor[MutatableString]):
             return ExecutionResult(ex, traceback.format_exc())
 
 
-def _build_curl_command(method: str, base_url: str, params_str: str | None, body_str: str | None) -> str:
+def _build_curl_command(
+    method: str, base_url: str, params_str: str | None, body_str: str | None
+) -> str:
     url = base_url
     if params_str:
         try:
@@ -87,6 +89,7 @@ class DjangoClientExecutor(Executor[MutatableRestRequest]):
         self._is_initialized = False
 
         import os
+
         import django
 
         os.environ["DJANGO_SETTINGS_MODULE"] = settings_module
@@ -171,7 +174,8 @@ class DjangoClientExecutor(Executor[MutatableRestRequest]):
             finally:
                 logger.disabled = previous_disabled
 
-            return ExecutionResult(None, None, status_code=response.status_code, curl_command=curl)
+            return ExecutionResult(
+                None, None, status_code=response.status_code, curl_command=curl)
         except Exception as ex:
             return ExecutionResult(ex, traceback.format_exc())
 

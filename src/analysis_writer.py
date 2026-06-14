@@ -10,9 +10,9 @@ if TYPE_CHECKING:
     from src.mutator import Mutatable
 
 
-def _serialize_input(value: "Mutatable") -> dict:
-    from src.mutator import MutatableString
+def _serialize_input(value: Mutatable) -> dict:
     from src.mutatable_request import MutatableRestRequest
+    from src.mutator import MutatableString
 
     if isinstance(value, MutatableRestRequest):
         return {"kind": "rest_request", **value.to_dict()}
@@ -21,9 +21,9 @@ def _serialize_input(value: "Mutatable") -> dict:
     return {"kind": "unknown", "repr": repr(value)}
 
 
-def _deserialize_input(d: dict) -> "Mutatable":
-    from src.mutator import MutatableString
+def _deserialize_input(d: dict) -> Mutatable:
     from src.mutatable_request import MutatableRestRequest
+    from src.mutator import MutatableString
 
     kind = d.get("kind")
     if kind == "rest_request":
@@ -34,7 +34,7 @@ def _deserialize_input(d: dict) -> "Mutatable":
 
 
 def save_analysis(
-    result: "FuzzingResult",
+    result: FuzzingResult,
     path: str,
     seed: int | None = None,
     iterations: int | None = None,
@@ -77,8 +77,8 @@ def save_analysis(
         json.dump(snapshot, f, ensure_ascii=False, indent=2)
 
 
-def load_corpus_from_analysis(path: str) -> list["Mutatable"]:
-    with open(path, encoding="utf-8") as f:
+def load_corpus_from_analysis(path: str) -> list[Mutatable]:
+    with Path(path).open(encoding="utf-8") as f:
         snapshot = json.load(f)
 
     return [_deserialize_input(d) for d in snapshot.get("corpus", [])]
