@@ -1,26 +1,24 @@
 import sys
-from typing import List
 
-sys.path.append('/your/path/to/whitefuzzer')
+sys.path.append("/your/path/to/whitefuzzer")
 
 from src import *
-from src.mutator import *
 from src.mutatable_request import *
+from src.mutator import *
 from src.openapi_schema import *
 
 
-
-def _extract_all_endpoint_schemas() -> List[EndpointSchema]:
-    from testy.swagger.custom_schema_generation import SchemaGenerator
+def _extract_all_endpoint_schemas() -> list[EndpointSchema]:
     from drf_yasg import openapi
+    from testy.swagger.custom_schema_generation import SchemaGenerator
 
     generator = SchemaGenerator(
         info=openapi.Info(
-            title='testy API',
-            default_version='v2',
-            description='testy API',
+            title="testy API",
+            default_version="v2",
+            description="testy API",
         ),
-        version='v2',
+        version="v2",
     )
 
     schema = generator.get_schema(public=True)

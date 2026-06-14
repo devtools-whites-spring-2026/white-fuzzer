@@ -1,15 +1,17 @@
 import sys
 
-sys.path.append('/your/path/to/white-fuzzer')
+sys.path.append("/your/path/to/white-fuzzer")
 
 from pathlib import Path
 
-from src.executor import DjangoClientExecutor
-from src.fuzzer_main import FuzzingResult, run_fuzzer, print_fuzzing_result_default_formatting
 from src import *
-from src.mutator import *
+from src.executor import DjangoClientExecutor
+from src.fuzzer_main import (
+    print_fuzzing_result_default_formatting,
+    run_fuzzer,
+)
 from src.mutatable_request import *
-
+from src.mutator import *
 
 
 def run_testy_fuzzer() -> None:
@@ -33,10 +35,11 @@ def run_testy_fuzzer() -> None:
             str(Path("relevant/path/1").resolve()),
             str(Path("another/path/specific/file.py").resolve()),
         ],
-        specification = full_spec,
+        specification=full_spec,
         branch=True,
     )
     print_fuzzing_result_default_formatting(result)
+
 
 def main() -> None:
     run_testy_fuzzer()
