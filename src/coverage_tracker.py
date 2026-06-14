@@ -8,7 +8,9 @@ from coverage.env import PYBEHAVIOR
 # sys.monitoring BRANCH_LEFT/RIGHT events were only added in Python 3.14.0a6.
 # On earlier interpreter coverage.py silently falls back from sysmon to
 # ctrace when branch=True. So we pick the core ourselves
-_SYSMON_OK_FOR_BRANCH = PYBEHAVIOR.pep669 and PYBEHAVIOR.branch_right_left
+_SYSMON_OK_FOR_BRANCH = PYBEHAVIOR.pep669 and getattr(
+    PYBEHAVIOR, "branch_right_left", False
+)
 if _SYSMON_OK_FOR_BRANCH:
     os.environ.setdefault("COVERAGE_CORE", "sysmon")
 else:
