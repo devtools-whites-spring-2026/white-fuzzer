@@ -1,2 +1,2 @@
 [src]
-exclude = ["schemathesis/"]
+exclude = ["schemathesis/", "docs/"]

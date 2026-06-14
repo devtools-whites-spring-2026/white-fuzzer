@@ -5,8 +5,11 @@ import traceback
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
-from src.mutatable_request import MutatableRestRequest
+from src.mutatable_request import MutatableRestRequest, MutatableRestScenario
 from src.mutator import Mutatable, MutatableString
+
+if TYPE_CHECKING:
+    from src.openapi_schema import EndpointSchema
 
 _METHODS_WITH_BODY = {"POST", "PUT", "PATCH"}
 
@@ -46,15 +49,48 @@ class FunctionExecutor(Executor[MutatableString]):
             return ExecutionResult(ex, traceback.format_exc())
 
 
+def _find_matching_endpoint(
+    spec: list[EndpointSchema], path: str, method: str
+) -> EndpointSchema | None:
+    for endpoint in spec:
+        if endpoint.get("path") == path and endpoint.get("method") == method.upper():
+            return endpoint
+    return None
+
+
+class SpecMismatchException(Exception):
+    def __init__(
+        self,
+        actual_code: int,
+        data: Any,
+        method: str,
+        path: str,
+        expected_codes: set[int],
+    ) -> None:
+        self.actual_code = actual_code
+        self.method = method
+        self.path = path
+        self.expected_codes = expected_codes
+        self.response_data = data
+        message = (
+            f"Unexpected status code {actual_code}  with data {data} "
+            f"for {method} {path}; "
+            f"expected one of {sorted(expected_codes)}"
+        )
+        super().__init__(message)
+
+
 class DjangoClientExecutor(Executor[MutatableRestRequest]):
     def __init__(
         self,
         settings_module: str,
         generate_user: bool = False,
+        openapi_spec: list[EndpointSchema] | None = None,
     ) -> None:
         self._generate_user = generate_user
         self._client = None
         self._is_initialized = False
+        self.openapi_spec = openapi_spec
 
         import os
 
@@ -125,18 +161,37 @@ class DjangoClientExecutor(Executor[MutatableRestRequest]):
 
             kwargs: dict[str, Any] = {}
             if argument.params:
-                kwargs["data"] = json.loads(argument.params.to_string())
-            if method in _METHODS_WITH_BODY and argument.data:
-                kwargs["data"] = argument.data.to_string()
+                kwargs["query_param"] = json.loads(argument.params.to_string())
+                if method not in _METHODS_WITH_BODY:
+                    kwargs["format"] = "json"
+            if method in _METHODS_WITH_BODY:
+                if argument.data:
+                    kwargs["data"] = argument.data.to_string()
+                else:
+                    kwargs["data"] = {}
                 kwargs["content_type"] = "application/json"
 
             logger = logging.getLogger("django.request")
             previous_disabled = logger.disabled
             logger.disabled = True
             try:
-                request_method(path, **kwargs)
+                response = request_method(path, **kwargs)
             finally:
                 logger.disabled = previous_disabled
+
+            if self.openapi_spec is not None:
+                endpoint = _find_matching_endpoint(self.openapi_spec, path, method)
+                if endpoint is not None:
+                    expected_codes = set(endpoint.get("responses", {}).keys())
+                    actual_code = response.status_code
+                    if actual_code not in expected_codes:
+                        raise SpecMismatchException(
+                            actual_code=actual_code,
+                            data=getattr(response, "data", None),
+                            method=method,
+                            path=path,
+                            expected_codes=expected_codes,
+                        )
 
             return ExecutionResult(None, None)
         except Exception as ex:
@@ -151,3 +206,23 @@ def run_target(
     return FunctionExecutor(target).execute(
         MutatableString(argument), coverage_collector
     )
+
+
+class DjangoScenarioExecutor(Executor[MutatableRestScenario]):
+    def __init__(self, django_exec: DjangoClientExecutor):
+        self._django_exec = django_exec
+
+    def execute(
+        self, argument: MutatableRestScenario, coverage_collector: CoverageTracker
+    ) -> ExecutionResult:
+        total_coverage = 0
+        for request in argument.scenario_requests:
+            intermediate_result = self._django_exec.execute(request, coverage_collector)
+            total_coverage += intermediate_result.new_coverage
+            if intermediate_result.thrown_exception is not None:
+                return ExecutionResult(
+                    intermediate_result.thrown_exception,
+                    intermediate_result.traceback_text,
+                    total_coverage,
+                )
+        return ExecutionResult(None, None, total_coverage)

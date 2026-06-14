@@ -2,7 +2,7 @@
 
 # install_import_hook()
 
-from src.fuzzer_coordinator import orchestrate_fuzzing
+from src.fuzzer_main import run_fuzzer
 from src.mutator import (
     DeleteCharMutator,
     InsertCharMutator,
@@ -25,23 +25,19 @@ TARGET = make_throw_if_wrong_length(len(CORPUS[0].arg))
 
 
 def test_delete_finds_shorter_string() -> None:
-    result = orchestrate_fuzzing(
-        TARGET, CORPUS.copy(), DeleteCharMutator()
-    ).tests_to_report
+    result = run_fuzzer(TARGET, CORPUS.copy(), DeleteCharMutator()).tests_to_report
     assert len(result) > 0
     assert any(len(s.arg) < len(CORPUS[0].arg) for s in result)
 
 
 def test_insert_finds_longer_string() -> None:
-    result = orchestrate_fuzzing(
-        TARGET, CORPUS.copy(), InsertCharMutator()
-    ).tests_to_report
+    result = run_fuzzer(TARGET, CORPUS.copy(), InsertCharMutator()).tests_to_report
     assert len(result) > 0
     assert any(len(s.arg) > len(CORPUS[0].arg) for s in result)
 
 
 def test_repeat_finds_different_length_string() -> None:
-    result = orchestrate_fuzzing(
+    result = run_fuzzer(
         TARGET, CORPUS.copy(), RepeatMutator(InsertCharMutator(), max_times=5)
     ).tests_to_report
     assert len(result) > 0

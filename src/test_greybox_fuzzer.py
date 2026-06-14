@@ -5,11 +5,11 @@ from pathlib import Path
 
 from src.coverage_tracker import CoverageTracker
 from src.executor import ExecutionResult
-from src.fuzzer_coordinator import (
+from src.fuzzer_main import (
     CoveredLine,
     _finding_fingerprint,
-    orchestrate_fuzzing,
-    orchestrate_greybox_fuzzing,
+    run_fuzzer,
+    run_greybox_fuzzer,
 )
 from src.mutator import MutatableString, Mutator
 
@@ -82,7 +82,7 @@ def _line_number_with_text(function, text: str) -> int:
 
 
 def test_blackbox_does_not_retain_interesting_non_crashing_inputs() -> None:
-    result = orchestrate_fuzzing(
+    result = run_fuzzer(
         branching_target,
         [MutatableString("")],
         PrefixStepMutator(),
@@ -94,7 +94,7 @@ def test_blackbox_does_not_retain_interesting_non_crashing_inputs() -> None:
 
 
 def test_blackbox_deduplicates_reported_tests_and_corpus() -> None:
-    result = orchestrate_fuzzing(
+    result = run_fuzzer(
         always_crashes,
         [MutatableString("same"), MutatableString("same")],
         IdentityMutator(),
@@ -107,7 +107,7 @@ def test_blackbox_deduplicates_reported_tests_and_corpus() -> None:
 
 
 def test_blackbox_deduplicates_semantically_equivalent_crashes() -> None:
-    result = orchestrate_fuzzing(
+    result = run_fuzzer(
         crashes_with_input_in_message,
         [MutatableString("")],
         SequentialMutator(["first", "second"]),
@@ -119,7 +119,7 @@ def test_blackbox_deduplicates_semantically_equivalent_crashes() -> None:
 
 
 def test_blackbox_keeps_crashes_with_different_coverage() -> None:
-    result = orchestrate_fuzzing(
+    result = run_fuzzer(
         crashes_on_distinct_paths,
         [MutatableString("")],
         SequentialMutator(["left", "right"]),
@@ -155,7 +155,7 @@ def test_coverage_tracker_reports_only_last_run_lines() -> None:
 
 
 def test_greybox_promotes_new_coverage_and_reaches_deep_branch() -> None:
-    result = orchestrate_greybox_fuzzing(
+    result = run_greybox_fuzzer(
         branching_target,
         [MutatableString("")],
         PrefixStepMutator(),
@@ -169,7 +169,7 @@ def test_greybox_promotes_new_coverage_and_reaches_deep_branch() -> None:
 
 
 def test_greybox_deduplicates_initial_corpus_and_reported_tests() -> None:
-    result = orchestrate_greybox_fuzzing(
+    result = run_greybox_fuzzer(
         always_crashes,
         [MutatableString("same"), MutatableString("same")],
         IdentityMutator(),
@@ -182,7 +182,7 @@ def test_greybox_deduplicates_initial_corpus_and_reported_tests() -> None:
 
 
 def test_greybox_deduplicates_semantically_equivalent_crashes() -> None:
-    result = orchestrate_greybox_fuzzing(
+    result = run_greybox_fuzzer(
         crashes_with_input_in_message,
         [MutatableString("first"), MutatableString("second")],
         IdentityMutator(),

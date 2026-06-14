@@ -1,16 +1,16 @@
 from src.example.complex_protocol import analyze_protocol_message
 from src.example.parse_http_header import parse_http_header
-from src.fuzzer_coordinator import (
-    orchestrate_fuzzing,
-    orchestrate_greybox_fuzzing,
+from src.fuzzer_main import (
+    print_fuzzing_result_default_formatting,
+    run_fuzzer,
+    run_greybox_fuzzer,
 )
-from src.main import print_fuzzing_result
 from src.mutator import MutatableString, create_generic_mutator
 
 
 def main() -> None:
     mutator = create_generic_mutator()
-    result = orchestrate_fuzzing(
+    result = run_fuzzer(
         parse_http_header,
         [
             MutatableString(s)
@@ -23,10 +23,10 @@ def main() -> None:
         mutator,
         iterations=50000,
     )
-    print_fuzzing_result(result)
+    print_fuzzing_result_default_formatting(result)
 
     ping = "WFZ/1 token=greybox; mode=deep; stage=7; checksum=11; action=ping"
-    greybox_result = orchestrate_greybox_fuzzing(
+    greybox_result = run_greybox_fuzzer(
         analyze_protocol_message,
         [
             MutatableString(ping),
@@ -34,7 +34,7 @@ def main() -> None:
         mutator,
         iterations=1000,
     )
-    print_fuzzing_result(greybox_result)
+    print_fuzzing_result_default_formatting(greybox_result)
 
 
 if __name__ == "__main__":

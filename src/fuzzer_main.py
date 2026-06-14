@@ -9,6 +9,7 @@ from typing import Any, Generic, NamedTuple, TypeVar, cast
 from src.coverage_tracker import CoverageTracker
 from src.executor import ExecutionResult, Executor, FunctionExecutor
 from src.mutator import Mutatable, Mutator
+from src.openapi_schema import EndpointSchema, request_schema_to_mutatable_alternative
 
 T = TypeVar("T", bound=Mutatable)
 
@@ -148,16 +149,20 @@ def _make_coverage_collector(
     return CoverageTracker(include_paths=include_paths, branch=branch)
 
 
-def _target_coverage(
-    target: Callable[[str], Any], coverage_collector: CoverageTracker
-) -> set[CoveredLine]:
-    target_file = inspect.getsourcefile(target)
-    if target_file is None:
-        return set()
+def _total_coverage(coverage_collector: CoverageTracker) -> set[CoveredLine]:
+    return {
+        CoveredLine(filename, line_number)
+        for filename, lines in coverage_collector.get_coverage().items()
+        for line_number in lines
+    }
 
-    target_path = str(Path(target_file))
-    file_coverage = coverage_collector.get_coverage_of(target_path)
-    return {CoveredLine(target_path, line_number) for line_number in file_coverage}
+
+def _total_run_coverage(coverage_collector: CoverageTracker) -> set[CoveredLine]:
+    return {
+        CoveredLine(filename, line_number)
+        for filename, lines in coverage_collector.get_last_run_coverage().items()
+        for line_number in lines
+    }
 
 
 def _energy_for_new_coverage(new_lines: set[CoveredLine]) -> int:
@@ -165,24 +170,23 @@ def _energy_for_new_coverage(new_lines: set[CoveredLine]) -> int:
 
 
 def _run_with_coverage_tracking(
-    target: Callable[[str], Any],
     test_input: T,
     coverage_collector: CoverageTracker,
-    known_target_coverage: set[CoveredLine],
+    known_coverage: set[CoveredLine],
     executor: Executor[T],
 ) -> tuple[ExecutionResult, set[CoveredLine], set[CoveredLine]]:
-    before = _target_coverage(target, coverage_collector)
+    before = _total_coverage(coverage_collector)
     coverage_collector.start()
     exec_result = executor.execute(test_input, coverage_collector)
     coverage_collector.stop()
-    after = _target_coverage(target, coverage_collector)
-    new_lines = after - before - known_target_coverage
+    after = _total_coverage(coverage_collector)
+    new_lines = after - before - known_coverage
     if new_lines:
         exec_result.new_coverage = len(new_lines)
-    return exec_result, new_lines, _target_run_coverage(target, coverage_collector)
+    return exec_result, new_lines, _total_run_coverage(coverage_collector)
 
 
-def orchestrate_fuzzing(
+def run_fuzzer(
     target: Callable[[str], Any],
     initial_corpus: list[T],
     mutator: Mutator,
@@ -191,6 +195,7 @@ def orchestrate_fuzzing(
     executor: Executor[T] | None = None,
     coverage_include_paths: list[str] | None = None,
     branch: bool = False,
+    specification: list[EndpointSchema] | None = None,
 ) -> FuzzingResult[T]:
     coverage_collector = _make_coverage_collector(
         target, coverage_include_paths, branch=branch
@@ -203,7 +208,13 @@ def orchestrate_fuzzing(
     if seed is not None:
         random.seed(seed)
 
-    corpus, corpus_fingerprints = _deduplicate_inputs(initial_corpus)
+    corpus = initial_corpus
+    if specification is not None:
+        for endpoint_schema in specification:
+            samples_from_spec = request_schema_to_mutatable_alternative(endpoint_schema)
+            corpus += cast("list[T]", samples_from_spec)
+
+    corpus, corpus_fingerprints = _deduplicate_inputs(corpus)
     tests_to_report: dict[T, ExecutionResult] = {}
     reported_fingerprints: set[str] = set()
     for i in range(iterations):
@@ -242,7 +253,7 @@ def orchestrate_fuzzing(
     )
 
 
-def orchestrate_greybox_fuzzing(
+def run_greybox_fuzzer(
     target: Callable[[str], Any],
     initial_corpus: list[T],
     mutator: Mutator,
@@ -251,6 +262,7 @@ def orchestrate_greybox_fuzzing(
     executor: Executor[T] | None = None,
     coverage_include_paths: list[str] | None = None,
     branch: bool = False,
+    specification: list[EndpointSchema] | None = None,
 ) -> FuzzingResult[T]:
     coverage_collector = _make_coverage_collector(
         target, coverage_include_paths, branch=branch
@@ -263,29 +275,32 @@ def orchestrate_greybox_fuzzing(
     if seed is not None:
         random.seed(seed)
 
-    deduplicated_initial_corpus, corpus_fingerprints = _deduplicate_inputs(
-        initial_corpus
-    )
-    corpus: list[CorpusEntry[T]] = [
-        CorpusEntry(value=item) for item in deduplicated_initial_corpus
-    ]
+    corpus = initial_corpus
+    if specification is not None:
+        for endpoint_schema in specification:
+            samples_from_spec = request_schema_to_mutatable_alternative(endpoint_schema)
+            corpus += cast("list[T]", samples_from_spec)
+
+    corpus, corpus_fingerprints = _deduplicate_inputs(corpus)
+    corpus: list[CorpusEntry[T]] = [CorpusEntry(value=item) for item in corpus]
     tests_to_report: dict[T, ExecutionResult] = {}
     reported_fingerprints: set[str] = set()
-    known_target_coverage: set[CoveredLine] = set()
+    known_coverage: set[CoveredLine] = set()
 
-    for item in deduplicated_initial_corpus:
+    seed_total = len(corpus)
+    for seed_index, entry in enumerate(corpus):
+        print(f"\rSeeding corpus: {seed_index + 1}/{seed_total}", end="")
         exec_result, new_lines, run_coverage = _run_with_coverage_tracking(
-            target,
-            item,
+            entry.value,
             coverage_collector,
-            known_target_coverage,
+            known_coverage,
             active_executor,
         )
         if new_lines:
             _record_test_to_report(
                 tests_to_report,
                 reported_fingerprints,
-                item,
+                entry.value,
                 exec_result,
                 run_coverage,
             )
@@ -293,22 +308,24 @@ def orchestrate_greybox_fuzzing(
             _record_test_to_report(
                 tests_to_report,
                 reported_fingerprints,
-                item,
+                entry.value,
                 exec_result,
                 run_coverage,
             )
-        known_target_coverage |= new_lines
+        known_coverage |= new_lines
+    if seed_total:
+        print(f"\rSeeding corpus: {seed_total}/{seed_total}")
 
-    for _ in range(iterations):
+    for i in range(iterations):
+        print(f"\rFuzzing progress: {i + 1}/{iterations}", end="")
         weights = [entry.energy for entry in corpus]
         entry = random.choices(corpus, weights=weights, k=1)[0]
         mutated_test = entry.value.apply_mutator(mutator)
 
         exec_result, new_lines, run_coverage = _run_with_coverage_tracking(
-            target,
             mutated_test,
             coverage_collector,
-            known_target_coverage,
+            known_coverage,
             active_executor,
         )
 
@@ -329,7 +346,7 @@ def orchestrate_greybox_fuzzing(
                 exec_result,
                 run_coverage,
             )
-            known_target_coverage |= new_lines
+            known_coverage |= new_lines
             fingerprint = _input_fingerprint(mutated_test)
             if fingerprint not in corpus_fingerprints:
                 corpus.append(
@@ -340,6 +357,8 @@ def orchestrate_greybox_fuzzing(
                 )
                 corpus_fingerprints.add(fingerprint)
 
+    print(f"\rFuzzing progress: {iterations}/{iterations}")
+
     coverage_report = coverage_collector.get_stats()
     function_coverage = _get_target_function_coverage(target, coverage_collector)
     return FuzzingResult(
@@ -349,3 +368,38 @@ def orchestrate_greybox_fuzzing(
         [entry.value for entry in corpus],
         coverage_collector=coverage_collector,
     )
+
+
+def print_fuzzing_result_default_formatting(result: FuzzingResult) -> None:
+    cr = result.coverage_report
+    fc, ft, fp = result.function_coverage
+    findings = {
+        k: v
+        for k, v in result.tests_to_report.items()
+        if not isinstance(v.thrown_exception, ValueError)
+    }
+
+    print("=== Fuzzing Report ===")
+    print()
+    covered = cr["covered"]
+    total = cr["total"]
+    percent = cr["percent"]
+    print(f"Coverage:          {covered}/{total} lines ({percent}%)")
+    if cr.get("branches_total"):
+        bc = cr["branches_covered"]
+        bt = cr["branches_total"]
+        bp = cr["branches_percent"]
+        print(f"Branch coverage:   {bc}/{bt} branches ({bp}%)")
+    print(f"Function coverage: {fc}/{ft} lines ({fp}%)")
+    print()
+    print(f"Findings: {len(findings)}")
+    for i, (input_str, exec_result) in enumerate(findings.items(), start=1):
+        print(f"  [{i}] Input:     {input_str!r}")
+        name = type(exec_result.thrown_exception).__name__
+        print(f"      Exception: {name}: {exec_result.thrown_exception}")
+        if exec_result.traceback_text:
+            print("      Traceback:")
+            for line in exec_result.traceback_text.rstrip().splitlines():
+                print(f"        {line}")
+    print()
+    print("=====================")
