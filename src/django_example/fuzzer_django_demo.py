@@ -4,8 +4,7 @@ from src.django_example.django_apps.demo_one.views import parse_quantity_view
 from src.django_example.django_apps.demo_three.views import transfer_view
 from src.django_example.django_apps.demo_two.views import coupon_check_view
 from src.executor import DjangoClientExecutor
-from src.fuzzer_coordinator import orchestrate_fuzzing
-from src.main import print_fuzzing_result
+from src.fuzzer_main import print_fuzzing_result_default_formatting, run_fuzzer
 from src.mutatable_request import (
     MutatableField,
     MutatableRestRequest,
@@ -32,7 +31,7 @@ def _make_single_param_get_request(
 
 
 def run_demo_one() -> None:
-    result = orchestrate_fuzzing(
+    result = run_fuzzer(
         target=parse_quantity_view,
         initial_corpus=[
             _make_single_param_get_request("/quantity", "q", v)
@@ -46,11 +45,11 @@ def run_demo_one() -> None:
         ],
     )
     print("Demo #1 (quantity parser)")
-    print_fuzzing_result(result)
+    print_fuzzing_result_default_formatting(result)
 
 
 def run_demo_two() -> None:
-    result = orchestrate_fuzzing(
+    result = run_fuzzer(
         target=coupon_check_view,
         initial_corpus=[
             _make_single_param_get_request("/coupon", "coupon", v)
@@ -64,7 +63,7 @@ def run_demo_two() -> None:
         ],
     )
     print("Demo #2 (coupon validator)")
-    print_fuzzing_result(result)
+    print_fuzzing_result_default_formatting(result)
 
 
 def run_demo_three() -> None:
@@ -101,7 +100,7 @@ def run_demo_three() -> None:
         },
     }
     spec = parse_openapi_schema(openapi_spec_dict)
-    result = orchestrate_fuzzing(
+    result = run_fuzzer(
         target=transfer_view,
         initial_corpus=[],
         mutator=create_generic_mutator(),
@@ -113,7 +112,7 @@ def run_demo_three() -> None:
         specification=spec,
     )
     print("Demo #3 (transfer - POST)")
-    print_fuzzing_result(result)
+    print_fuzzing_result_default_formatting(result)
 
 
 def run_demo_five_spec_based_corpus() -> None:
@@ -141,7 +140,7 @@ def run_demo_five_spec_based_corpus() -> None:
         },
     }
     spec = parse_openapi_schema(openapi_spec_dict)
-    result = orchestrate_fuzzing(
+    result = run_fuzzer(
         target=parse_quantity_view,
         initial_corpus=[],
         mutator=create_generic_mutator(),
@@ -152,7 +151,7 @@ def run_demo_five_spec_based_corpus() -> None:
         ],
         specification=spec,
     )
-    print_fuzzing_result(result)
+    print_fuzzing_result_default_formatting(result)
 
 
 def run_demo_four_openapi_mismatch() -> None:
@@ -180,7 +179,7 @@ def run_demo_four_openapi_mismatch() -> None:
         },
     }
     spec = parse_openapi_schema(openapi_spec_dict)
-    result = orchestrate_fuzzing(
+    result = run_fuzzer(
         target=parse_quantity_view,
         initial_corpus=[
             _make_single_param_get_request("/quantity", "q", v)
@@ -194,7 +193,7 @@ def run_demo_four_openapi_mismatch() -> None:
         ],
     )
     print("Demo #4 (OpenAPI status code mismatch)")
-    print_fuzzing_result(result)
+    print_fuzzing_result_default_formatting(result)
 
 
 def main() -> None:

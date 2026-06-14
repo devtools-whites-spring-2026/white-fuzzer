@@ -5,10 +5,10 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from src.fuzzer_coordinator import (
-    FuzzingResult,
-    orchestrate_fuzzing,
-    orchestrate_greybox_fuzzing,
+from src.fuzzer_main import (
+    print_fuzzing_result_default_formatting,
+    run_fuzzer,
+    run_greybox_fuzzer,
 )
 from src.mutator import MutatableString, create_generic_mutator
 
@@ -35,41 +35,6 @@ def resolve_target_function(module, function_name: str | None) -> Callable[[str]
         return module.main
 
     raise ValueError("No function specified and no main() found")
-
-
-def print_fuzzing_result(result: FuzzingResult) -> None:
-    cr = result.coverage_report
-    fc, ft, fp = result.function_coverage
-    findings = {
-        k: v
-        for k, v in result.tests_to_report.items()
-        if not isinstance(v.thrown_exception, ValueError)
-    }
-
-    print("=== Fuzzing Report ===")
-    print()
-    covered = cr["covered"]
-    total = cr["total"]
-    percent = cr["percent"]
-    print(f"Coverage:          {covered}/{total} lines ({percent}%)")
-    if cr.get("branches_total"):
-        bc = cr["branches_covered"]
-        bt = cr["branches_total"]
-        bp = cr["branches_percent"]
-        print(f"Branch coverage:   {bc}/{bt} branches ({bp}%)")
-    print(f"Function coverage: {fc}/{ft} lines ({fp}%)")
-    print()
-    print(f"Findings: {len(findings)}")
-    for i, (input_str, exec_result) in enumerate(findings.items(), start=1):
-        print(f"  [{i}] Input:     {input_str!r}")
-        name = type(exec_result.thrown_exception).__name__
-        print(f"      Exception: {name}: {exec_result.thrown_exception}")
-        if exec_result.traceback_text:
-            print("      Traceback:")
-            for line in exec_result.traceback_text.rstrip().splitlines():
-                print(f"        {line}")
-    print()
-    print("=====================")
 
 
 def parse_args():
@@ -145,7 +110,7 @@ def main():
 
     mutator = create_generic_mutator()
 
-    orchestrator = orchestrate_greybox_fuzzing if args.greybox else orchestrate_fuzzing
+    orchestrator = run_greybox_fuzzer if args.greybox else run_fuzzer
     results = orchestrator(
         target=target_func,
         initial_corpus=[MutatableString(s) for s in args.input],
@@ -155,7 +120,7 @@ def main():
         branch=args.branch,
     )
 
-    print_fuzzing_result(results)
+    print_fuzzing_result_default_formatting(results)
 
     if args.report and results.coverage_collector is not None:
         formats = [f.strip() for f in args.report.split(",") if f.strip()]

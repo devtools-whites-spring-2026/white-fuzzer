@@ -183,7 +183,7 @@ def _run_with_coverage_tracking(
     return exec_result, new_lines, _target_run_coverage(target, coverage_collector)
 
 
-def orchestrate_fuzzing(
+def run_fuzzer(
     target: Callable[[str], Any],
     initial_corpus: list[T],
     mutator: Mutator,
@@ -250,7 +250,7 @@ def orchestrate_fuzzing(
     )
 
 
-def orchestrate_greybox_fuzzing(
+def run_greybox_fuzzer(
     target: Callable[[str], Any],
     initial_corpus: list[T],
     mutator: Mutator,
@@ -357,3 +357,38 @@ def orchestrate_greybox_fuzzing(
         [entry.value for entry in corpus],
         coverage_collector=coverage_collector,
     )
+
+
+def print_fuzzing_result_default_formatting(result: FuzzingResult) -> None:
+    cr = result.coverage_report
+    fc, ft, fp = result.function_coverage
+    findings = {
+        k: v
+        for k, v in result.tests_to_report.items()
+        if not isinstance(v.thrown_exception, ValueError)
+    }
+
+    print("=== Fuzzing Report ===")
+    print()
+    covered = cr["covered"]
+    total = cr["total"]
+    percent = cr["percent"]
+    print(f"Coverage:          {covered}/{total} lines ({percent}%)")
+    if cr.get("branches_total"):
+        bc = cr["branches_covered"]
+        bt = cr["branches_total"]
+        bp = cr["branches_percent"]
+        print(f"Branch coverage:   {bc}/{bt} branches ({bp}%)")
+    print(f"Function coverage: {fc}/{ft} lines ({fp}%)")
+    print()
+    print(f"Findings: {len(findings)}")
+    for i, (input_str, exec_result) in enumerate(findings.items(), start=1):
+        print(f"  [{i}] Input:     {input_str!r}")
+        name = type(exec_result.thrown_exception).__name__
+        print(f"      Exception: {name}: {exec_result.thrown_exception}")
+        if exec_result.traceback_text:
+            print("      Traceback:")
+            for line in exec_result.traceback_text.rstrip().splitlines():
+                print(f"        {line}")
+    print()
+    print("=====================")
