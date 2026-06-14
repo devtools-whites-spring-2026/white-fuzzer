@@ -129,3 +129,22 @@ class PrpJson:
             self.plc_counter += 1
             return placeholder
         return data
+
+
+class MutatableRestScenario(Mutatable):
+    def __init__(self, scenario: list[MutatableRestRequest], p: float):
+        self.scenario_requests = scenario
+        self.p = p
+
+    def apply_mutator(self, mutator: Mutator) -> "MutatableRestScenario":
+        new_requests = []
+        for request in self.scenario_requests:
+            if random.random() < self.p:
+                new_requests.append(request.apply_mutator(mutator))
+            else:
+                new_requests.append(request)
+        return MutatableRestScenario(new_requests, self.p)
+
+    def __repr__(self) -> str:
+        requests = ", ".join(repr(request) for request in self.scenario_requests)
+        return f"Scenario[{requests}]"

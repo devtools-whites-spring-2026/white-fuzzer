@@ -1,13 +1,16 @@
 from pathlib import Path
 
-from src.django_example.django_apps.demo_one.views import parse_quantity_view
+from src.django_example.django_apps.demo_one.views import (
+    parse_quantity_view,
+)
 from src.django_example.django_apps.demo_three.views import transfer_view
 from src.django_example.django_apps.demo_two.views import coupon_check_view
-from src.executor import DjangoClientExecutor
+from src.executor import DjangoClientExecutor, DjangoScenarioExecutor
 from src.fuzzer_main import print_fuzzing_result_default_formatting, run_fuzzer
 from src.mutatable_request import (
     MutatableField,
     MutatableRestRequest,
+    MutatableRestScenario,
     StringWithMutablePlaceholders,
 )
 from src.mutator import create_generic_mutator
@@ -196,12 +199,42 @@ def run_demo_four_openapi_mismatch() -> None:
     print_fuzzing_result_default_formatting(result)
 
 
+def run_demo_six_scenario() -> None:
+    def _scenario(q_value: str, p_value: str) -> MutatableRestScenario:
+        return MutatableRestScenario(
+            scenario=[
+                _make_single_param_get_request("/quantity", "q", q_value),
+                _make_single_param_get_request("/price", "p", p_value),
+            ],
+            p=0.5,
+        )
+
+    result = run_fuzzer(
+        target=parse_quantity_view,
+        initial_corpus=[
+            _scenario(q, p)
+            for q, p in [("9", "5"), ("12", "0"), ("3", "abc"), ("-5", "10")]
+        ],
+        mutator=create_generic_mutator(),
+        iterations=100,
+        executor=DjangoScenarioExecutor(
+            DjangoClientExecutor(settings_module=DEMO_SETTINGS)
+        ),
+        coverage_include_paths=[
+            str(Path("src/django_example/django_apps/demo_one").resolve()),
+        ],
+    )
+    print("Demo #6 (single-app scenario: quantity then price)")
+    print_fuzzing_result_default_formatting(result)
+
+
 def main() -> None:
     run_demo_one()
     run_demo_two()
     run_demo_three()
     run_demo_four_openapi_mismatch()
     run_demo_five_spec_based_corpus()
+    run_demo_six_scenario()
 
 
 if __name__ == "__main__":

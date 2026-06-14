@@ -5,7 +5,7 @@ import traceback
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
-from src.mutatable_request import MutatableRestRequest
+from src.mutatable_request import MutatableRestRequest, MutatableRestScenario
 from src.mutator import Mutatable, MutatableString
 
 if TYPE_CHECKING:
@@ -206,3 +206,23 @@ def run_target(
     return FunctionExecutor(target).execute(
         MutatableString(argument), coverage_collector
     )
+
+
+class DjangoScenarioExecutor(Executor[MutatableRestScenario]):
+    def __init__(self, django_exec: DjangoClientExecutor):
+        self._django_exec = django_exec
+
+    def execute(
+        self, argument: MutatableRestScenario, coverage_collector: CoverageTracker
+    ) -> ExecutionResult:
+        total_coverage = 0
+        for request in argument.scenario_requests:
+            intermediate_result = self._django_exec.execute(request, coverage_collector)
+            total_coverage += intermediate_result.new_coverage
+            if intermediate_result.thrown_exception is not None:
+                return ExecutionResult(
+                    intermediate_result.thrown_exception,
+                    intermediate_result.traceback_text,
+                    total_coverage,
+                )
+        return ExecutionResult(None, None, total_coverage)
