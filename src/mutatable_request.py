@@ -40,7 +40,10 @@ class StringWithMutablePlaceholders(Mutatable):
     def to_dict(self) -> dict:
         return {
             "data": self.data,
-            "placeholders": [{"placeholder": f.placeholder, "value": f.value} for f in self.placeholders],
+            "placeholders": [
+                {"placeholder": f.placeholder, "value": f.value}
+                for f in self.placeholders
+            ],
         }
 
     @classmethod
@@ -84,6 +87,8 @@ class MutatableRestRequest(Mutatable):
 
     @classmethod
     def from_dict(cls, d: dict) -> "MutatableRestRequest":
-        params = StringWithMutablePlaceholders.from_dict(d["params"]) if d.get("params") else None
-        data = StringWithMutablePlaceholders.from_dict(d["data"]) if d.get("data") else None
+        params = StringWithMutablePlaceholders.from_dict(
+            d["params"]) if d.get("params") else None
+        data = StringWithMutablePlaceholders.from_dict(
+            d["data"]) if d.get("data") else None
         return cls(d["type"], d["url"], params, data)

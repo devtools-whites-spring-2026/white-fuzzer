@@ -35,7 +35,7 @@ def _deserialize_input(d: dict) -> Mutatable:
 
 def save_analysis(
     result: FuzzingResult,
-    path: str,
+    path: Path,
     seed: int | None = None,
     iterations: int | None = None,
     target: str | None = None,
@@ -71,14 +71,13 @@ def save_analysis(
         "corpus": corpus,
     }
 
-    out = Path(path)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    with out.open("w", encoding="utf-8") as f:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as f:
         json.dump(snapshot, f, ensure_ascii=False, indent=2)
 
 
-def load_corpus_from_analysis(path: str) -> list[Mutatable]:
-    with Path(path).open(encoding="utf-8") as f:
+def load_corpus_from_analysis(path: Path) -> list[Mutatable]:
+    with path.open(encoding="utf-8") as f:
         snapshot = json.load(f)
 
     return [_deserialize_input(d) for d in snapshot.get("corpus", [])]

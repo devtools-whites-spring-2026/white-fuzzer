@@ -5,13 +5,13 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from src.analysis_writer import load_corpus_from_analysis, save_analysis
 from src.fuzzer_coordinator import (
     FuzzingResult,
     orchestrate_fuzzing,
     orchestrate_greybox_fuzzing,
 )
 from src.mutator import Mutatable, MutatableString, create_generic_mutator
-from src.analysis_writer import save_analysis, load_corpus_from_analysis
 
 
 def load_module_from_path(path: str):
